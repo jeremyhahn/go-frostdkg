@@ -1,0 +1,132 @@
+version: '3.8'
+
+# libp2p integration test network
+# Tests FROST-DKG protocol over libp2p peer-to-peer network
+
+services:
+  # Coordinator node - acts as the DKG session coordinator
+  coordinator:
+    build:
+      context: ../../..
+      dockerfile: test/integration/libp2p/Dockerfile
+    container_name: frostdkg-libp2p-coordinator
+    hostname: coordinator
+    environment:
+      - NODE_TYPE=coordinator
+      - THRESHOLD=2
+      - PARTICIPANTS=3
+      - SESSION_ID=libp2p-test-session
+      - LISTEN_ADDR=/ip4/0.0.0.0/tcp/9000
+      - LOG_LEVEL=debug
+    ports:
+      - "9000:9000"
+    networks:
+      libp2p-testnet:
+        ipv4_address: 172.28.0.10
+    healthcheck:
+      test: ["CMD", "cat", "/tmp/coordinator_ready"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  # Participant 1
+  participant1:
+    build:
+      context: ../../..
+      dockerfile: test/integration/libp2p/Dockerfile
+    container_name: frostdkg-libp2p-participant1
+    hostname: participant1
+    environment:
+      - NODE_TYPE=participant
+      - PARTICIPANT_ID=0
+      - COORDINATOR_ADDR=/ip4/172.28.0.10/tcp/9000
+      - THRESHOLD=2
+      - LOG_LEVEL=debug
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      libp2p-testnet:
+        ipv4_address: 172.28.0.11
+    volumes:
+      - participant1-data:/data
+
+  # Participant 2
+  participant2:
+    build:
+      context: ../../..
+      dockerfile: test/integration/libp2p/Dockerfile
+    container_name: frostdkg-libp2p-participant2
+    hostname: participant2
+    environment:
+      - NODE_TYPE=participant
+      - PARTICIPANT_ID=1
+      - COORDINATOR_ADDR=/ip4/172.28.0.10/tcp/9000
+      - THRESHOLD=2
+      - LOG_LEVEL=debug
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      libp2p-testnet:
+        ipv4_address: 172.28.0.12
+    volumes:
+      - participant2-data:/data
+
+  # Participant 3
+  participant3:
+    build:
+      context: ../../..
+      dockerfile: test/integration/libp2p/Dockerfile
+    container_name: frostdkg-libp2p-participant3
+    hostname: participant3
+    environment:
+      - NODE_TYPE=participant
+      - PARTICIPANT_ID=2
+      - COORDINATOR_ADDR=/ip4/172.28.0.10/tcp/9000
+      - THRESHOLD=2
+      - LOG_LEVEL=debug
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      libp2p-testnet:
+        ipv4_address: 172.28.0.13
+    volumes:
+      - participant3-data:/data
+
+  # Test runner - executes integration tests and validates results
+  test-runner:
+    build:
+      context: ../../..
+      dockerfile: test/integration/libp2p/Dockerfile.test
+    container_name: frostdkg-libp2p-test-runner
+    hostname: test-runner
+    environment:
+      - TEST_TIMEOUT=120s
+      - COORDINATOR_ADDR=172.28.0.10:9000
+      - PARTICIPANT_ADDRS=172.28.0.11,172.28.0.12,172.28.0.13
+    depends_on:
+      - coordinator
+      - participant1
+      - participant2
+      - participant3
+    networks:
+      libp2p-testnet:
+        ipv4_address: 172.28.0.100
+    volumes:
+      - test-results:/results
+
+volumes:
+  participant1-data:
+  participant2-data:
+  participant3-data:
+  test-results:
+
+networks:
+  libp2p-testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
