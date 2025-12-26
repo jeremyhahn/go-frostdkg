@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package dkg;
+
+option go_package = "github.com/jeremyhahn/go-frostdkg/pkg/transport/grpc/proto;proto";
+
+// DKGCoordinator service provides gRPC transport for FROST-DKG protocol.
+// The coordinator acts as a relay server with no cryptographic role.
+service DKGCoordinator {
+  // ParticipantStream establishes a bidirectional stream for DKG message exchange.
+  // Participants connect to this stream and exchange messages throughout the DKG protocol.
+  rpc ParticipantStream(stream DKGMessage) returns (stream DKGMessage);
+}
+
+// MessageType identifies DKG protocol messages
+enum MessageType {
+  MSG_TYPE_UNSPECIFIED = 0;
+  MSG_TYPE_JOIN = 1;         // Participant joining session
+  MSG_TYPE_SESSION_INFO = 2; // Session info from coordinator
+  MSG_TYPE_ROUND1 = 3;       // Round 1 broadcast
+  MSG_TYPE_ROUND1_AGG = 4;   // Aggregated round 1 from coordinator
+  MSG_TYPE_ROUND2 = 5;       // Round 2 shares
+  MSG_TYPE_ROUND2_AGG = 6;   // Aggregated round 2 from coordinator
+  MSG_TYPE_CERT_EQ_SIGN = 7; // CertEq signature
+  MSG_TYPE_CERTIFICATE = 8;  // Final certificate
+  MSG_TYPE_ERROR = 9;        // Error message
+  MSG_TYPE_COMPLETE = 10;    // DKG complete
+}
+
+// DKGMessage is the envelope for all DKG protocol messages
+message DKGMessage {
+  string session_id = 1;     // Session identifier
+  MessageType type = 2;      // Message type
+  int32 sender_idx = 3;      // Sender's participant index
+  bytes payload = 4;         // Serialized message payload
+  int64 timestamp = 5;       // Unix timestamp (milliseconds)
+}

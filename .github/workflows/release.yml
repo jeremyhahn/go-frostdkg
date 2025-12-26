@@ -1,0 +1,225 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.25.5'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: jeremyhahn/frostdkg
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=1 --max-count=1) 2>/dev/null || echo "")
+          VERSION=${{ steps.get_version.outputs.version }}
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"* %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --no-merges)
+          fi
+
+          cat > CHANGELOG.md << EOF
+          ## What's Changed
+
+          ${CHANGELOG}
+
+          ## Installation
+
+          ### Binary Downloads
+          - frostdkg-${VERSION}-linux-amd64
+          - frostdkg-${VERSION}-linux-arm64
+          - frostdkg-${VERSION}-darwin-amd64
+          - frostdkg-${VERSION}-darwin-arm64
+          - frostdkg-${VERSION}-windows-amd64.exe
+          - frostdkg-${VERSION}-windows-arm64.exe
+
+          ### Docker
+          docker pull ghcr.io/jeremyhahn/frostdkg:${VERSION}
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.version, 'alpha') || contains(steps.get_version.outputs.version, 'beta') || contains(steps.get_version.outputs.version, 'rc') }}
+
+  build-binaries:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: create-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ''
+          - goos: linux
+            goarch: arm64
+            ext: ''
+          - goos: darwin
+            goarch: amd64
+            ext: ''
+          - goos: darwin
+            goarch: arm64
+            ext: ''
+          - goos: windows
+            goarch: amd64
+            ext: '.exe'
+          - goos: windows
+            goarch: arm64
+            ext: '.exe'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          LDFLAGS="-X main.version=${VERSION} -X main.commit=${{ github.sha }} -s -w"
+          mkdir -p dist
+          go build -ldflags="${LDFLAGS}" -o dist/frostdkg${{ matrix.ext }} ./cmd/frostdkg
+
+          BINARY_NAME="frostdkg-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          mv dist/frostdkg${{ matrix.ext }} "${BINARY_NAME}"
+          sha256sum "${BINARY_NAME}" > "${BINARY_NAME}.sha256"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            frostdkg-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+            frostdkg-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}.sha256
+
+  build-docker:
+    name: Build Docker Image
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile.release << 'DOCKERFILE'
+          FROM golang:1.25-alpine AS builder
+          RUN apk add --no-cache git ca-certificates
+          WORKDIR /build
+          COPY go.mod go.sum ./
+          RUN go mod download
+          COPY . .
+          ARG VERSION
+          ARG COMMIT
+          RUN CGO_ENABLED=0 go build \
+              -ldflags="-X main.version=${VERSION} -X main.commit=${COMMIT} -s -w" \
+              -o /build/frostdkg ./cmd/frostdkg
+
+          FROM alpine:3.20
+          RUN apk add --no-cache ca-certificates && adduser -D -u 1000 frostdkg
+          COPY --from=builder /build/frostdkg /usr/local/bin/frostdkg
+          USER frostdkg
+          ENTRYPOINT ["/usr/local/bin/frostdkg"]
+          DOCKERFILE
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.create-release.outputs.version }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-checksums:
+    name: Create Checksums
+    needs: [create-release, build-binaries]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          gh release download ${TAG_NAME} --repo ${{ github.repository }} --pattern "*.sha256" --dir checksums || true
+
+      - name: Create master checksums
+        run: |
+          if [ -d checksums ] && [ "$(ls -A checksums 2>/dev/null)" ]; then
+            cat checksums/*.sha256 > checksums.txt
+          else
+            echo "No checksums" > checksums.txt
+          fi
+
+      - name: Upload checksums
+        uses: softprops/action-gh-release@v2
+        with:
+          files: checksums.txt
