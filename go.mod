@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/fxamacker/cbor/v2 v2.9.0
+	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/google/uuid v1.6.0
 	github.com/jeremyhahn/go-frost v0.1.5-alpha
 	github.com/libp2p/go-libp2p v0.46.0
