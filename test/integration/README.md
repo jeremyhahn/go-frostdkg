@@ -107,7 +107,7 @@ Validates basic VSS operations across all ciphersuites:
 ## Docker Environment
 
 ### Base Image
-- golang:1.25-alpine
+- golang:1.26.1-alpine
 
 ### Dependencies
 - git

@@ -40,6 +40,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // Logger interface for transport layer logging.
@@ -280,6 +282,26 @@ type DKGResult struct {
 	// RecoveryData is the serialized data for DKG output recovery.
 	// Can be shared publicly or obtained from other participants.
 	RecoveryData []byte
+}
+
+// Zeroize securely clears sensitive data from the DKG parameters.
+func (p *DKGParams) Zeroize() {
+	if p == nil {
+		return
+	}
+	secmem.ZeroBytes(p.HostSeckey)
+	secmem.ZeroBytes(p.Random)
+	p.HostSeckey = nil
+	p.Random = nil
+}
+
+// Zeroize securely clears sensitive data from the DKG result.
+func (r *DKGResult) Zeroize() {
+	if r == nil {
+		return
+	}
+	secmem.ZeroBytes(r.SecretShare)
+	r.SecretShare = nil
 }
 
 // SessionConfig contains configuration for a coordinator DKG session.

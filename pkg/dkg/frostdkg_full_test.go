@@ -180,8 +180,10 @@ func TestFROSTDKGFullParticipantStep1Errors(t *testing.T) {
 
 	// Get the signer for key generation
 	signer, _ := GetSigner(cs)
-	_, pubkey, _ := signer.GenerateKey()
-	hostPubkeys := [][]byte{pubkey, pubkey, pubkey}
+	_, pubkey1, _ := signer.GenerateKey()
+	_, pubkey2, _ := signer.GenerateKey()
+	_, pubkey3, _ := signer.GenerateKey()
+	hostPubkeys := [][]byte{pubkey1, pubkey2, pubkey3}
 
 	t.Run("invalid_threshold_too_low", func(t *testing.T) {
 		random := make([]byte, 32)
@@ -228,18 +230,23 @@ func TestFROSTDKGFullCoordinatorStep1Errors(t *testing.T) {
 	signer, _ := GetSigner(cs)
 
 	t.Run("mismatched_message_count", func(t *testing.T) {
-		// Generate one message but expect more participants
-		seckey, pubkey, _ := signer.GenerateKey()
-		hostPubkeys := [][]byte{pubkey, pubkey}
+		// Generate two distinct keys so we can create a valid round 1 message
+		seckey1, pubkey1, _ := signer.GenerateKey()
+		_, pubkey2, _ := signer.GenerateKey()
+		hostPubkeys := [][]byte{pubkey1, pubkey2}
 
 		random := make([]byte, 32)
 		_, _ = rand.Read(random)
-		_, msg, _ := FROSTDKGFullParticipantStep1(cs, seckey, hostPubkeys, 2, 0, random)
+		_, msg, err := FROSTDKGFullParticipantStep1(cs, seckey1, hostPubkeys, 2, 0, random)
+		if err != nil {
+			t.Fatalf("FROSTDKGFullParticipantStep1 failed: %v", err)
+		}
 
 		// Only 1 message but 3 pubkeys expected
-		hostPubkeys3 := [][]byte{pubkey, pubkey, pubkey}
+		_, pubkey3, _ := signer.GenerateKey()
+		hostPubkeys3 := [][]byte{pubkey1, pubkey2, pubkey3}
 		msgs := []*FROSTDKGFullParticipantMsg1{msg}
-		_, _, err := FROSTDKGFullCoordinatorStep1(cs, msgs, 2, hostPubkeys3)
+		_, _, err = FROSTDKGFullCoordinatorStep1(cs, msgs, 2, hostPubkeys3)
 		if err != ErrFROSTDKGInvalidParticipantCount {
 			t.Errorf("Expected ErrFROSTDKGInvalidParticipantCount, got %v", err)
 		}

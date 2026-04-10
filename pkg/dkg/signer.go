@@ -24,6 +24,7 @@ import (
 	"math/big"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed25519_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed448_shake256"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ristretto255_sha512"
@@ -94,6 +95,12 @@ func (s *P256Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]b
 		return nil, ErrSigningFailed
 	}
 
+	// Validate scalar is in valid range [1, n-1]
+	d := new(big.Int).SetBytes(secretKey)
+	if d.Sign() <= 0 || d.Cmp(elliptic.P256().Params().N) >= 0 {
+		return nil, ErrSigningFailed
+	}
+
 	// Create ECDSA private key
 	curve := elliptic.P256()
 	privKey := new(ecdsa.PrivateKey)
@@ -109,6 +116,13 @@ func (s *P256Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]b
 	if err != nil {
 		return nil, ErrSigningFailed
 	}
+	// Securely zero the big.Int's internal representation
+	if dWords := privKey.D.Bits(); len(dWords) > 0 {
+		for i := range dWords {
+			dWords[i] = 0
+		}
+	}
+	privKey.D.SetInt64(0)
 
 	// Encode as 64 bytes (32 bytes r + 32 bytes s)
 	sig := make([]byte, 64)
@@ -116,6 +130,8 @@ func (s *P256Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]b
 	sBytes := sigS.Bytes()
 	copy(sig[32-len(rBytes):32], rBytes)
 	copy(sig[64-len(sBytes):64], sBytes)
+	secmem.ZeroBytes(rBytes)
+	secmem.ZeroBytes(sBytes)
 
 	return sig, nil
 }
@@ -181,6 +197,7 @@ func (s *P256Signer) GenerateKey() ([]byte, []byte, error) {
 	secretKey := make([]byte, 32)
 	dBytes := privKey.D.Bytes()
 	copy(secretKey[32-len(dBytes):], dBytes)
+	secmem.ZeroBytes(dBytes)
 
 	// Public key in compressed format
 	publicKey := compressP256Point(privKey.X, privKey.Y)
@@ -203,6 +220,7 @@ func (s *Ed25519Signer) Sign(secretKey []byte, message []byte, auxRand []byte) (
 
 	// Derive private scalar using H3 (same as GenerateKey)
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 
 	// Compute public key A = scalar * G
 	pubPoint := grp.ScalarBaseMult(scalar)
@@ -212,6 +230,8 @@ func (s *Ed25519Signer) Sign(secretKey []byte, message []byte, auxRand []byte) (
 	copy(nonceInput, secretKey)
 	copy(nonceInput[len(secretKey):], message)
 	r := cs.H3(nonceInput)
+	defer r.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -232,13 +252,16 @@ func (s *Ed25519Signer) Sign(secretKey []byte, message []byte, auxRand []byte) (
 	copy(cInput[len(RBytes):], ABytes)
 	copy(cInput[len(RBytes)+len(ABytes):], message)
 	c := cs.H3(cInput)
+	defer c.Zeroize()
 
 	// s = r + c * scalar
 	sigS := c.Mul(scalar)
 	sigS = r.Add(sigS)
+	defer sigS.Zeroize()
 
 	// Signature is R || s
 	sBytes := grp.SerializeScalar(sigS)
+	defer secmem.ZeroBytes(sBytes)
 
 	sig := make([]byte, 64)
 	copy(sig[:32], RBytes)
@@ -308,6 +331,7 @@ func (s *Ed25519Signer) GenerateKey() ([]byte, []byte, error) {
 
 	// Use H3 to derive a valid scalar from the seed
 	scalar := cs.H3(seed)
+	defer scalar.Zeroize()
 
 	// Compute public key
 	pubPoint := grp.ScalarBaseMult(scalar)
@@ -332,6 +356,7 @@ func (s *Ristretto255Signer) Sign(secretKey []byte, message []byte, auxRand []by
 
 	// Use H3 to derive scalar from secret key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 
 	// Compute public key A = scalar * G
 	pubPoint := grp.ScalarBaseMult(scalar)
@@ -341,6 +366,8 @@ func (s *Ristretto255Signer) Sign(secretKey []byte, message []byte, auxRand []by
 	copy(nonceInput, secretKey)
 	copy(nonceInput[len(secretKey):], message)
 	r := cs.H3(nonceInput)
+	defer r.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -361,13 +388,16 @@ func (s *Ristretto255Signer) Sign(secretKey []byte, message []byte, auxRand []by
 	copy(cInput[len(RBytes):], ABytes)
 	copy(cInput[len(RBytes)+len(ABytes):], message)
 	c := cs.H3(cInput)
+	defer c.Zeroize()
 
 	// s = r + c * scalar
 	sigS := c.Mul(scalar)
 	sigS = r.Add(sigS)
+	defer sigS.Zeroize()
 
 	// Signature is R || s
 	sBytes := grp.SerializeScalar(sigS)
+	defer secmem.ZeroBytes(sBytes)
 
 	sig := make([]byte, 64)
 	copy(sig[:32], RBytes)
@@ -437,6 +467,7 @@ func (s *Ristretto255Signer) GenerateKey() ([]byte, []byte, error) {
 
 	// Derive scalar and compute public key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 	pubPoint := grp.ScalarBaseMult(scalar)
 	pubKey, err := grp.SerializeElement(pubPoint)
 	if err != nil {
@@ -459,6 +490,7 @@ func (s *Ed448Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]
 
 	// Use H3 to derive scalar from secret key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 
 	// Compute public key A = scalar * G
 	pubPoint := grp.ScalarBaseMult(scalar)
@@ -468,6 +500,8 @@ func (s *Ed448Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]
 	copy(nonceInput, secretKey)
 	copy(nonceInput[len(secretKey):], message)
 	r := cs.H3(nonceInput)
+	defer r.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -488,13 +522,16 @@ func (s *Ed448Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]
 	copy(cInput[len(RBytes):], ABytes)
 	copy(cInput[len(RBytes)+len(ABytes):], message)
 	c := cs.H3(cInput)
+	defer c.Zeroize()
 
 	// s = r + c * scalar
 	sigS := c.Mul(scalar)
 	sigS = r.Add(sigS)
+	defer sigS.Zeroize()
 
 	// Signature is R || s
 	sBytes := grp.SerializeScalar(sigS)
+	defer secmem.ZeroBytes(sBytes)
 
 	sig := make([]byte, 114) // 57 bytes for R + 57 bytes for s
 	copy(sig[:57], RBytes)
@@ -564,6 +601,7 @@ func (s *Ed448Signer) GenerateKey() ([]byte, []byte, error) {
 
 	// Derive scalar and compute public key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 	pubPoint := grp.ScalarBaseMult(scalar)
 	pubKey, err := grp.SerializeElement(pubPoint)
 	if err != nil {
@@ -587,6 +625,7 @@ func (s *Secp256k1Signer) Sign(secretKey []byte, message []byte, auxRand []byte)
 
 	// Use H3 to derive scalar from secret key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 
 	// Compute public key A = scalar * G
 	pubPoint := grp.ScalarBaseMult(scalar)
@@ -596,6 +635,8 @@ func (s *Secp256k1Signer) Sign(secretKey []byte, message []byte, auxRand []byte)
 	copy(nonceInput, secretKey)
 	copy(nonceInput[len(secretKey):], message)
 	r := cs.H3(nonceInput)
+	defer r.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -616,13 +657,16 @@ func (s *Secp256k1Signer) Sign(secretKey []byte, message []byte, auxRand []byte)
 	copy(cInput[len(RBytes):], ABytes)
 	copy(cInput[len(RBytes)+len(ABytes):], message)
 	c := cs.H3(cInput)
+	defer c.Zeroize()
 
 	// s = r + c * scalar
 	sigS := c.Mul(scalar)
 	sigS = r.Add(sigS)
+	defer sigS.Zeroize()
 
 	// Signature is R || s (33 bytes + 32 bytes = 65 bytes)
 	sBytes := grp.SerializeScalar(sigS)
+	defer secmem.ZeroBytes(sBytes)
 
 	sig := make([]byte, 65)
 	copy(sig[:33], RBytes)
@@ -692,6 +736,7 @@ func (s *Secp256k1Signer) GenerateKey() ([]byte, []byte, error) {
 
 	// Derive scalar and compute public key
 	scalar := cs.H3(secretKey)
+	defer scalar.Zeroize()
 	pubPoint := grp.ScalarBaseMult(scalar)
 	pubKey, err := grp.SerializeElement(pubPoint)
 	if err != nil {

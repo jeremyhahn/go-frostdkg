@@ -64,7 +64,7 @@ Examples:
 }
 
 func init() {
-	coordinatorCmd.Flags().StringVar(&coordinatorListen, "listen", "0.0.0.0:9000", "address to listen on")
+	coordinatorCmd.Flags().StringVar(&coordinatorListen, "listen", "127.0.0.1:9000", "address to listen on")
 	coordinatorCmd.Flags().IntVarP(&coordinatorThreshold, "threshold", "t", 2, "minimum signers required (t)")
 	coordinatorCmd.Flags().IntVarP(&coordinatorParticipants, "participants", "n", 3, "total participants (n)")
 	coordinatorCmd.Flags().StringVar(&coordinatorSessionID, "session-id", "", "session ID (generates UUID if not provided)")
@@ -128,6 +128,14 @@ func runCoordinator(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  TLS CA: %s\n", tlsCA)
 			}
 		}
+	}
+
+	// Warn if running without TLS on network transports
+	if tlsCert == "" && protocol != "memory" && !insecure {
+		return fmt.Errorf("TLS is required for network transports (use --tls-cert/--tls-key, or --insecure for testing)")
+	}
+	if insecure && tlsCert == "" {
+		fmt.Println("WARNING: Running without TLS. Do NOT use in production.")
 	}
 
 	// Create transport config

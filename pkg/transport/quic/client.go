@@ -124,8 +124,7 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 			return transport.NewTLSError("failed to create TLS config", err)
 		}
 	} else {
-		// Use insecure config for testing
-		tlsConfig = tlsconfig.InsecureClientConfig()
+		return transport.NewTLSError("QUIC requires TLS configuration - set TLSCertFile or TLSCAFile (use InsecureClientConfig explicitly for testing)", transport.ErrTLSRequired)
 	}
 
 	// Configure QUIC-specific TLS settings
@@ -139,7 +138,7 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 		MaxIncomingUniStreams:          -1, // Disable unidirectional streams
 		KeepAlivePeriod:                c.getKeepAliveInterval(),
 		EnableDatagrams:                false,
-		Allow0RTT:                      true, // Enable 0-RTT for faster reconnections
+		Allow0RTT:                      false, // Disabled: 0-RTT is vulnerable to replay attacks
 		MaxStreamReceiveWindow:         safeUint64(maxMsgSize),
 		MaxConnectionReceiveWindow:     safeUint64(maxMsgSize * 10),
 		DisablePathMTUDiscovery:        false,

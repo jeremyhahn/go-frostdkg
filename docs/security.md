@@ -164,5 +164,5 @@ make security
 
 ## Changelog
 
-- **2025-01**: Initial security policy, documented GO-2024-3218
-- **2025-01**: Added Encrypted DKG security section, HostKey documentation
+- 2025-01: Initial security policy, documented GO-2024-3218
+- 2025-01: Added Encrypted DKG security section, HostKey documentation

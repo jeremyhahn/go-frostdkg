@@ -185,9 +185,9 @@ frostdkg participant --coordinator localhost:9000 --threshold 2 --total 3
 
 ## Design Principles
 
-- **Modularity** - Pluggable transports, ciphersuites
-- **Simplicity** - Clean abstractions, minimal dependencies
-- **Performance** - Lock-free algorithms, efficient serialization
-- **Security** - Defense in depth, typed errors, zero trust
-- **Testing** - 90%+ code coverage, integration tests, benchmarks
-- **Standards** - RFC 9591 compliance
+- Pluggable transports and ciphersuites
+- Clean abstractions with minimal dependencies
+- Lock-free algorithms, efficient serialization
+- Defense in depth, typed errors, zero trust coordinator
+- 90%+ code coverage with integration tests and benchmarks
+- RFC 9591 compliance

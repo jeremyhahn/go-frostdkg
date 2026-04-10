@@ -1,6 +1,6 @@
 # go-frostdkg
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26.1+-blue.svg)](https://golang.org)
 [![Coverage](https://img.shields.io/badge/coverage-60%25-yellow.svg)](https://github.com/jeremyhahn/go-frostdkg)
 [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)](https://github.com/jeremyhahn/go-frostdkg)
@@ -337,7 +337,7 @@ make lint              # Run linters
 ## Related Projects
 
 - [go-frost](https://github.com/jeremyhahn/go-frost) - FROST threshold signing
-- [go-keychain](https://github.com/jeremyhahn/go-keychain) - Key management
+- [go-xkms](https://github.com/jeremyhahn/go-xkms) - Key management
 - [go-trusted-ca](https://github.com/jeremyhahn/go-trusted-ca) - Certificate Authority
 - [go-trusted-platform](https://github.com/jeremyhahn/go-trusted-platform) - Trusted Computing Platform
 

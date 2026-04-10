@@ -38,10 +38,12 @@ package dkg
 
 import (
 	"crypto/rand"
+
 	"github.com/jeremyhahn/go-frost/pkg/frost"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 	"github.com/jeremyhahn/go-frost/pkg/frost/keygen/dkg"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // RefreshingShare represents a secret share used to refresh an existing share.
@@ -113,6 +115,15 @@ func ComputeRefreshingShares(
 		return nil, nil, err
 	}
 
+	// Check for duplicate identifiers
+	seen := make(map[frost.Identifier]bool)
+	for _, id := range identifiers {
+		if seen[id] {
+			return nil, nil, NewFaultyParticipantError(int(id), "duplicate identifier")
+		}
+		seen[id] = true
+	}
+
 	// Build refreshing shares using a zero secret
 	// This ensures the group public key doesn't change
 	zeroSecret := grp.NewScalar() // Zero scalar
@@ -122,6 +133,7 @@ func ComputeRefreshingShares(
 	if err != nil {
 		return nil, nil, err
 	}
+	defer secmem.ZeroBytes(seed)
 
 	vss, err := Generate(cs, seed, int(minSigners))
 	if err != nil {
@@ -135,7 +147,15 @@ func ComputeRefreshingShares(
 	if err != nil {
 		return nil, nil, err
 	}
+	// Zeroize the old polynomial before replacing it
+	vss.f.Zeroize()
 	vss.f = poly
+	// Zeroize the intermediate coefficient copies
+	for _, c := range coeffs {
+		if c != nil {
+			c.Zeroize()
+		}
+	}
 
 	// Generate secret shares for all participants
 	shares, err := generateSecretShares(grp, vss, identifiers)
@@ -380,8 +400,12 @@ func RefreshDKGPart2(
 			return nil, nil, NewFaultyParticipantError(int(senderID), "incorrect commitment length")
 		}
 
-		// Note: We don't verify the proof of knowledge in refresh
-		// because the secret is always zero
+		// Verify that the constant term commitment is the identity element.
+		// This ensures the participant is using a zero-constant-term polynomial
+		// which is required for refresh (to not change the group secret).
+		if !fullCommitment[0].IsIdentity() {
+			return nil, nil, NewFaultyParticipantError(int(senderID), "commitment constant term is not identity - refresh requires zero secret")
+		}
 
 		// Compute share for this participant: f_i(senderID)
 		share := evaluatePolynomialAtIdentifier(
@@ -662,6 +686,8 @@ var cryptoRandRead = func(b []byte) (int, error) {
 
 // evaluatePolynomialAtIdentifier evaluates a polynomial at a given identifier.
 // Identifiers are converted to scalars for evaluation.
+// The returned scalar holds a secret polynomial evaluation; callers must zeroize it
+// when it is no longer needed.
 func evaluatePolynomialAtIdentifier(
 	grp group.Group,
 	coefficients []group.Scalar,
@@ -703,8 +729,10 @@ func identifierToScalar(grp group.Group, id frost.Identifier) group.Scalar {
 	}
 
 	// Deserialize to scalar
-	// Error ignored: small integers always deserialize successfully
-	scalar, _ := grp.DeserializeScalar(bytes)
+	scalar, err := grp.DeserializeScalar(bytes)
+	if err != nil {
+		panic("identifierToScalar: unexpected deserialization failure for small integer: " + err.Error())
+	}
 	return scalar
 }
 
@@ -732,15 +760,21 @@ func computeProofOfKnowledge(
 	if err != nil {
 		return nil, err
 	}
+	defer k.Zeroize()
 
 	// Compute R = g^k
 	R := grp.ScalarBaseMult(k)
 
 	// Compute challenge
 	challenge := computeChallenge(identifier, commitment, R, cs)
+	defer challenge.Zeroize()
 
 	// Compute response: z = k + secret * challenge
-	z := k.Add(secret.Mul(challenge))
+	// Use Copy to avoid mutating the input secret scalar
+	secretCopy := secret.Copy()
+	z := k.Add(secretCopy.Mul(challenge))
+	defer secretCopy.Zeroize()
+	defer z.Zeroize()
 
 	return &dkg.Signature{R: R, Z: z}, nil
 }

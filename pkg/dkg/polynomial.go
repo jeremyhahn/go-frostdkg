@@ -17,6 +17,8 @@
 package dkg
 
 import (
+	"fmt"
+
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 )
 
@@ -33,30 +35,20 @@ type Polynomial struct {
 
 // Zeroize clears the polynomial coefficients.
 //
-// SECURITY NOTE: Due to Go's type system, this cannot directly zero the memory
-// holding scalar values. The group.Scalar interface doesn't expose internal
-// byte storage. This method:
-//  1. Overwrites each coefficient with a zero scalar (may help if implementation
-//     caches byte representations)
-//  2. Sets all coefficient references to nil to make them GC-eligible
+// Each coefficient's internal memory is overwritten with zeros via the
+// group.Scalar.Zeroize() method, then all references are set to nil to
+// make them GC-eligible.
 //
-// For maximum security in high-assurance environments:
-//   - Use group implementations that support secure zeroization
-//   - Call runtime.GC() after Zeroize() if needed
-//   - Consider memory isolation techniques (mlock, etc.)
+// This is a best-effort operation for defense-in-depth; Go's GC may
+// retain copies from prior arithmetic operations.
 func (p *Polynomial) Zeroize() {
 	if p == nil {
 		return
 	}
-	// Overwrite with zero scalars before niling references
-	if p.grp != nil {
-		zeroScalar := p.grp.NewScalar()
-		for i := range p.coeffs {
-			if p.coeffs[i] != nil {
-				// Attempt to overwrite by re-assigning
-				// (effectiveness depends on group implementation)
-				p.coeffs[i] = zeroScalar
-			}
+	// Zeroize each coefficient's internal memory in place
+	for i := range p.coeffs {
+		if p.coeffs[i] != nil {
+			p.coeffs[i].Zeroize()
 		}
 	}
 	// Nil all references to make them GC-eligible
@@ -106,16 +98,16 @@ func (p *Polynomial) Threshold() int {
 // This method reverses the coefficient array and evaluates from the highest
 // degree term down to the constant term.
 //
-// SECURITY: This function panics if x is zero because evaluating at zero
+// SECURITY: This function returns an error if x is zero because evaluating at zero
 // reveals the secret (constant term). Use ConstantTerm() for explicit access.
-func (p *Polynomial) Eval(x group.Scalar) group.Scalar {
+func (p *Polynomial) Eval(x group.Scalar) (group.Scalar, error) {
 	if len(p.coeffs) == 0 {
-		return p.grp.NewScalar() // Return zero scalar
+		return p.grp.NewScalar(), nil // Return zero scalar
 	}
 
 	// Security check: never evaluate at zero - reveals the secret!
 	if x.IsZero() {
-		panic("Polynomial.Eval: evaluation at zero would reveal secret - use ConstantTerm()")
+		return nil, fmt.Errorf("polynomial: evaluation at zero would reveal secret - use ConstantTerm()")
 	}
 
 	// Start with zero
@@ -129,7 +121,7 @@ func (p *Polynomial) Eval(x group.Scalar) group.Scalar {
 		value = value.Add(p.coeffs[i])
 	}
 
-	return value
+	return value, nil
 }
 
 // ConstantTerm returns the constant term of the polynomial (coeffs[0]).

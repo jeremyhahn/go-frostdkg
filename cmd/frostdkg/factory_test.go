@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
+	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -144,14 +145,24 @@ func TestDefaultTransportFactory(t *testing.T) {
 		})
 
 		t.Run("coordinator-"+tt.name, func(t *testing.T) {
-			if tt.skipCoordinator {
-				t.Skip("QUIC coordinator requires TLS certificates")
-			}
-
 			cfg := &transport.Config{
 				Protocol: tt.protocol,
 				Address:  "localhost:9000",
 			}
+
+			// QUIC requires TLS certificates - generate them for the test
+			if tt.skipCoordinator {
+				tmpDir := t.TempDir()
+				certPEM, keyPEM, err := tlsconfig.GenerateSelfSigned([]string{"localhost"}, time.Hour)
+				require.NoError(t, err)
+				certFile := filepath.Join(tmpDir, "cert.crt")
+				keyFile := filepath.Join(tmpDir, "cert.key")
+				require.NoError(t, os.WriteFile(certFile, certPEM, 0600))
+				require.NoError(t, os.WriteFile(keyFile, keyPEM, 0600))
+				cfg.TLSCertFile = certFile
+				cfg.TLSKeyFile = keyFile
+			}
+
 			sessionCfg := &transport.SessionConfig{
 				Threshold:       2,
 				NumParticipants: 3,
@@ -192,6 +203,7 @@ func TestRunParticipantWithMock(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	verbose = false
 
@@ -207,6 +219,10 @@ func TestRunParticipantWithMock(t *testing.T) {
 		SessionID:    "test-session-id",
 		RecoveryData: []byte("test-recovery-data"),
 	}
+
+	// Pre-compute expected hex values before runParticipant zeroes the result bytes
+	expectedSecretShareHex := hex.EncodeToString(expectedResult.SecretShare)
+	expectedThresholdPubkeyHex := hex.EncodeToString(expectedResult.ThresholdPubkey)
 
 	// Setup expectations
 	mockFactory.On("NewParticipant", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config")).
@@ -232,8 +248,8 @@ func TestRunParticipantWithMock(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, participantID, output.ParticipantIndex)
-	assert.Equal(t, hex.EncodeToString(expectedResult.SecretShare), output.SecretShare)
-	assert.Equal(t, hex.EncodeToString(expectedResult.ThresholdPubkey), output.ThresholdPubkey)
+	assert.Equal(t, expectedSecretShareHex, output.SecretShare)
+	assert.Equal(t, expectedThresholdPubkeyHex, output.ThresholdPubkey)
 	assert.Equal(t, expectedResult.SessionID, output.SessionID)
 	assert.Len(t, output.PublicShares, len(expectedResult.PublicShares))
 
@@ -254,6 +270,7 @@ func TestRunParticipantFactoryError(t *testing.T) {
 	participantThreshold = 2
 	participantOutput = filepath.Join(t.TempDir(), "output.json")
 	protocol = "grpc"
+	insecure = true
 
 	// Setup factory to return error
 	mockFactory.On("NewParticipant", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config")).
@@ -281,6 +298,7 @@ func TestRunParticipantConnectError(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 1
 	protocol = "grpc"
+	insecure = true
 
 	// Setup mocks
 	mockFactory.On("NewParticipant", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config")).
@@ -311,6 +329,7 @@ func TestRunParticipantDKGError(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 
 	// Setup mocks
 	mockFactory.On("NewParticipant", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config")).
@@ -343,6 +362,7 @@ func TestRunCoordinatorWithMock(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	verbose = false
 
@@ -396,6 +416,7 @@ func TestRunCoordinatorFactoryError(t *testing.T) {
 	coordinatorSessionID = "test"
 	coordinatorListen = "localhost:9000"
 	protocol = "grpc"
+	insecure = true
 
 	// Setup factory to return error
 	mockFactory.On("NewCoordinator", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config"),
@@ -423,6 +444,7 @@ func TestRunCoordinatorStartError(t *testing.T) {
 	coordinatorSessionID = "test"
 	coordinatorListen = "localhost:9000"
 	protocol = "grpc"
+	insecure = true
 
 	// Setup mocks
 	mockFactory.On("NewCoordinator", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config"),
@@ -531,6 +553,7 @@ func TestRunParticipantWithHostkey(t *testing.T) {
 	participantHostkey = hex.EncodeToString(make([]byte, 32))
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	verbose = false
 
 	expectedResult := &transport.DKGResult{
@@ -608,6 +631,7 @@ func TestRunParticipantWithVerbose(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	verbose = true
 	defer func() { verbose = false }()
 
@@ -648,6 +672,7 @@ func TestRunCoordinatorWithVerbose(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	tlsCert = "cert.pem"
 	tlsKey = "key.pem"
 	tlsCA = "ca.pem"
@@ -707,6 +732,7 @@ func TestRunParticipantIDExceedsHostPubkeys(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 
 	err := runParticipant(participantCmd, nil)
 	require.Error(t, err)
@@ -729,6 +755,7 @@ func TestRunParticipantDisconnectError(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	verbose = false
 
 	expectedResult := &transport.DKGResult{
@@ -769,6 +796,7 @@ func TestRunParticipantWriteFileError(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 
 	expectedResult := &transport.DKGResult{
 		SecretShare:     make([]byte, 32),
@@ -808,6 +836,7 @@ func TestRunCoordinatorGenerateSessionID(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	verbose = false
 
 	mockFactory.On("NewCoordinator", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config"),
@@ -851,6 +880,7 @@ func TestRunCoordinatorStopError(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 
 	mockFactory.On("NewCoordinator", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config"),
 		mock.AnythingOfType("*transport.SessionConfig"), coordinatorSessionID).
@@ -894,6 +924,7 @@ func TestRunCoordinatorSuccessfulCompletion(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	verbose = false
 
 	// Setup coordinator to succeed
@@ -961,6 +992,7 @@ func TestRunParticipantWithTLSPathsAndVerbose(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	tlsCert = "cert.pem"
 	tlsKey = "key.pem"
 	verbose = true
@@ -1132,6 +1164,7 @@ func TestRunCoordinatorWithEmptySessionIDAndVerbose(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	tlsCert = "cert.pem"
 	tlsKey = "key.pem"
@@ -1186,6 +1219,7 @@ func TestRunCoordinatorWaitForParticipantsStopError(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	verbose = false
 
 	mockFactory.On("NewCoordinator", transport.ProtocolGRPC, mock.AnythingOfType("*transport.Config"),
@@ -1235,6 +1269,7 @@ func TestRunCoordinatorSuccessWithSignal(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	verbose = false
 
@@ -1296,6 +1331,7 @@ func TestRunCoordinatorGracefulShutdown(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	verbose = false
 
@@ -1345,6 +1381,7 @@ func TestRunCoordinatorWithTLSVerboseNoCA(t *testing.T) {
 	coordinatorListen = "localhost:9000"
 	coordinatorTimeout = 1
 	protocol = "grpc"
+	insecure = true
 	codec = "json"
 	tlsCert = "server.crt"
 	tlsKey = "server.key"
@@ -1400,6 +1437,7 @@ func TestRunParticipantVerboseWithHostkeyGeneration(t *testing.T) {
 	participantHostkey = "" // Will generate, triggers verbose output
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	verbose = true
 	defer func() { verbose = false }()
 
@@ -1441,6 +1479,7 @@ func TestRunParticipantVerboseConnectedAndDKGComplete(t *testing.T) {
 	participantCoordinator = "localhost:9000"
 	participantTimeout = 5
 	protocol = "grpc"
+	insecure = true
 	verbose = true
 	defer func() { verbose = false }()
 

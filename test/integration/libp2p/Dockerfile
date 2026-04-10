@@ -1,5 +1,5 @@
 # Dockerfile for libp2p DKG node (coordinator or participant)
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates

@@ -17,21 +17,15 @@
 package dkg
 
 import (
-	"crypto/subtle"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // ZeroBytes securely zeros a byte slice.
 // This is aligned with Zcash FROST's Zeroize trait pattern.
-// The function uses crypto/subtle to prevent compiler optimizations
-// from removing the zeroing operation.
+// The function delegates to secmem.ZeroBytes which uses crypto/subtle
+// to prevent compiler optimizations from removing the zeroing operation.
 func ZeroBytes(b []byte) {
-	if len(b) == 0 {
-		return
-	}
-	// Use ConstantTimeCopy to zero the slice in a way that
-	// the compiler cannot optimize away
-	zeros := make([]byte, len(b))
-	subtle.ConstantTimeCopy(1, b, zeros)
+	secmem.ZeroBytes(b)
 }
 
 // ZeroSlices securely zeros multiple byte slices.
@@ -64,6 +58,9 @@ func (sp *SecretPackage) Zeroize() {
 	}
 	ZeroBytes(sp.SecretShare)
 	ZeroBytes(sp.Seed)
+	sp.Coefficients = nil
+	sp.SecretShare = nil
+	sp.Seed = nil
 }
 
 // SecureScalar wraps a scalar byte representation with secure cleanup.
@@ -75,12 +72,15 @@ type SecureScalar struct {
 func NewSecureScalar(data []byte) *SecureScalar {
 	copied := make([]byte, len(data))
 	copy(copied, data)
+	ZeroBytes(data)
 	return &SecureScalar{data: copied}
 }
 
-// Bytes returns the scalar data.
+// Bytes returns a copy of the scalar data.
 func (s *SecureScalar) Bytes() []byte {
-	return s.data
+	result := make([]byte, len(s.data))
+	copy(result, s.data)
+	return result
 }
 
 // Zeroize securely clears the scalar data.

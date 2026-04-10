@@ -25,6 +25,7 @@ import (
 	"math/big"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed25519_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed448_shake256"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ristretto255_sha512"
@@ -176,9 +177,13 @@ func NewSoftwareHostKeyWithRNG(cs ciphersuite.Ciphersuite, secretKey []byte, rng
 		return nil, ErrUnknownCiphersuite
 	}
 
+	// Copy the secret key to prevent the caller from modifying it
+	secretKeyCopy := make([]byte, len(secretKey))
+	copy(secretKeyCopy, secretKey)
+
 	return &SoftwareHostKey{
 		cs:        cs,
-		secretKey: secretKey,
+		secretKey: secretKeyCopy,
 		publicKey: publicKey,
 		scalar:    scalar,
 		rng:       rng,
@@ -214,7 +219,25 @@ func GenerateSoftwareHostKeyWithRNG(cs ciphersuite.Ciphersuite, rng io.Reader) (
 		return nil, err
 	}
 
-	return NewSoftwareHostKeyWithRNG(cs, secretKey, rng)
+	hk, err := NewSoftwareHostKeyWithRNG(cs, secretKey, rng)
+	if err != nil {
+		secmem.ZeroBytes(secretKey)
+		return nil, err
+	}
+	return hk, nil
+}
+
+// Zeroize securely clears all secret key material.
+func (k *SoftwareHostKey) Zeroize() {
+	if k == nil {
+		return
+	}
+	secmem.ZeroBytes(k.secretKey)
+	k.secretKey = nil
+	if k.scalar != nil {
+		k.scalar.Zeroize()
+	}
+	k.scalar = nil
 }
 
 // ECDH computes a Diffie-Hellman shared secret.
@@ -266,6 +289,13 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 	if err != nil {
 		return nil, ErrHostKeySignFailed
 	}
+	// Securely zero the big.Int's internal representation
+	if dWords := privKey.D.Bits(); len(dWords) > 0 {
+		for i := range dWords {
+			dWords[i] = 0
+		}
+	}
+	privKey.D.SetInt64(0)
 
 	// Encode as 64 bytes (32 bytes r + 32 bytes s)
 	sig := make([]byte, 64)
@@ -273,6 +303,8 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 	sBytes := s.Bytes()
 	copy(sig[32-len(rBytes):32], rBytes)
 	copy(sig[64-len(sBytes):64], sBytes)
+	secmem.ZeroBytes(rBytes)
+	secmem.ZeroBytes(sBytes)
 
 	return sig, nil
 }
@@ -284,6 +316,8 @@ func (k *SoftwareHostKey) signSchnorr(grp group.Group, message []byte) ([]byte, 
 	copy(nonceInput, k.secretKey)
 	copy(nonceInput[len(k.secretKey):], message)
 	r := k.cs.H3(nonceInput)
+	defer r.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -300,13 +334,16 @@ func (k *SoftwareHostKey) signSchnorr(grp group.Group, message []byte) ([]byte, 
 	copy(cInput[len(RBytes):], k.publicKey)
 	copy(cInput[len(RBytes)+len(k.publicKey):], message)
 	c := k.cs.H3(cInput)
+	defer c.Zeroize()
 
 	// s = r + c * scalar
 	s := c.Mul(k.scalar)
 	s = r.Add(s)
+	defer s.Zeroize()
 
 	// Signature is R || s
 	sBytes := grp.SerializeScalar(s)
+	defer secmem.ZeroBytes(sBytes)
 
 	sig := make([]byte, len(RBytes)+len(sBytes))
 	copy(sig[:len(RBytes)], RBytes)
@@ -323,7 +360,9 @@ func (k *SoftwareHostKey) PublicKey() []byte {
 // SecretKey returns the secret key bytes.
 // This is only available for software keys; hardware keys would not expose this.
 func (k *SoftwareHostKey) SecretKey() []byte {
-	return k.secretKey
+	result := make([]byte, len(k.secretKey))
+	copy(result, k.secretKey)
+	return result
 }
 
 // SoftwareHostKeyGenerator generates software host keys.

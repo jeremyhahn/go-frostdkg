@@ -19,12 +19,16 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -127,6 +131,10 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("threshold must be at least 1")
 	}
 
+	// Set up signal handling for graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Get the public key size for the selected ciphersuite
 	pubkeySize := CiphersuiteKeySize(ciphersuite)
 
@@ -153,6 +161,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid hostkey hex: %w", err)
 		}
+		secmem.ZeroString(&participantHostkey)
 		if len(hostSeckey) != 32 {
 			return fmt.Errorf("hostkey must be 32 bytes, got %d", len(hostSeckey))
 		}
@@ -163,7 +172,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to generate host secret key: %w", err)
 		}
 		if verbose {
-			fmt.Printf("Generated host secret key: %s\n", hex.EncodeToString(hostSeckey))
+			fmt.Printf("Generated host secret key (fingerprint): %x\n", sha256.Sum256(hostSeckey))
 		}
 	}
 
@@ -203,6 +212,14 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("participant ID %d exceeds number of host public keys %d", participantID, len(hostPubkeys))
 	}
 
+	// Warn if running without TLS on network transports
+	if tlsCert == "" && protocol != "memory" && !insecure {
+		return fmt.Errorf("TLS is required for network transports (use --tls-cert/--tls-key, or --insecure for testing)")
+	}
+	if insecure && tlsCert == "" {
+		fmt.Println("WARNING: Running without TLS. Do NOT use in production.")
+	}
+
 	// Create transport config
 	cfg := &transport.Config{
 		Protocol:          transport.Protocol(protocol),
@@ -224,7 +241,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 	}
 
 	// Connect to coordinator
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(participantTimeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(participantTimeout)*time.Second)
 	defer cancel()
 
 	if verbose {
@@ -253,12 +270,14 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		ParticipantIdx: participantID,
 		Random:         random,
 	}
+	defer params.Zeroize()
 
 	// Execute DKG
 	result, err := participant.RunDKG(ctx, params)
 	if err != nil {
 		return fmt.Errorf("DKG execution failed: %w", err)
 	}
+	defer result.Zeroize()
 
 	if verbose {
 		fmt.Println("DKG completed successfully!")
@@ -288,10 +307,15 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal output: %w", err)
 	}
+	defer secmem.ZeroBytes(jsonData)
 
 	if err := os.WriteFile(participantOutput, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
+
+	// Zero remaining secret material not covered by defers
+	secmem.ZeroString(&output.SecretShare)
+	secmem.ZeroString(&output.RecoveryData)
 
 	fmt.Printf("Key share saved to: %s\n", participantOutput)
 	fmt.Println("\nWARNING: Keep the secret_share confidential! Do not share it.")

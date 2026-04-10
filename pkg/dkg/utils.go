@@ -83,16 +83,16 @@ func constantTimeElementEqual(grp group.Group, a, b group.Element) bool {
 	aBytes := a.Bytes()
 	bBytes := b.Bytes()
 
-	// Constant-time comparison
-	if len(aBytes) != len(bBytes) {
-		return false
-	}
+	// Constant-time comparison (ConstantTimeCompare returns 0 for different lengths)
 	return subtle.ConstantTimeCompare(aBytes, bBytes) == 1
 }
 
 // xorBytes XORs two byte slices of equal length.
 // Caller must ensure both slices have equal length.
 func xorBytes(a, b []byte) []byte {
+	if len(a) != len(b) {
+		panic("xorBytes: slices must have equal length")
+	}
 	result := make([]byte, len(a))
 	for i := range a {
 		result[i] = a[i] ^ b[i]

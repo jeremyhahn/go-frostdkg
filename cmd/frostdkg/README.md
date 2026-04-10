@@ -4,12 +4,12 @@ Command-line tool for executing FROST Distributed Key Generation (DKG).
 
 ## Features
 
-- **Multi-Protocol Support**: gRPC, HTTP, QUIC, libp2p, MCP, Unix sockets, and in-memory
-- **Multiple Codecs**: JSON, MessagePack, CBOR serialization
-- **TLS 1.3 Security**: Built-in support for secure communications with mTLS
-- **Certificate Generation**: Generate ECDSA and Ed25519 certificates for testing
-- **Key Share Verification**: Validate generated key shares
-- **Configuration Management**: YAML config files and environment variables
+- gRPC, HTTP, QUIC, libp2p, MCP, Unix sockets, and in-memory transport
+- JSON, MessagePack, and CBOR serialization
+- TLS 1.3 with optional mTLS
+- Built-in ECDSA and Ed25519 certificate generation
+- Key share verification
+- YAML config files and environment variables
 
 ## Installation
 

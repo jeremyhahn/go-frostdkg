@@ -92,7 +92,10 @@ func TestPolynomialEval(t *testing.T) {
 
 		for i := 1; i <= 3; i++ {
 			x := scalarFromInt(grp, i)
-			result := poly.Eval(x)
+			result, err := poly.Eval(x)
+			if err != nil {
+				t.Fatalf("Eval failed: %v", err)
+			}
 			if !result.Equal(five) {
 				t.Errorf("Expected f(%d) = 5, got different value", i)
 			}
@@ -108,7 +111,10 @@ func TestPolynomialEval(t *testing.T) {
 		// f(1) = 2 + 3*1 = 5
 		one := scalarFromInt(grp, 1)
 		five := scalarFromInt(grp, 5)
-		result := poly.Eval(one)
+		result, err := poly.Eval(one)
+		if err != nil {
+			t.Fatalf("Eval failed: %v", err)
+		}
 		if !result.Equal(five) {
 			t.Error("Expected f(1) = 5")
 		}
@@ -116,7 +122,10 @@ func TestPolynomialEval(t *testing.T) {
 		// f(2) = 2 + 3*2 = 8
 		twoScalar := scalarFromInt(grp, 2)
 		eight := scalarFromInt(grp, 8)
-		result = poly.Eval(twoScalar)
+		result, err = poly.Eval(twoScalar)
+		if err != nil {
+			t.Fatalf("Eval failed: %v", err)
+		}
 		if !result.Equal(eight) {
 			t.Error("Expected f(2) = 8")
 		}
@@ -137,7 +146,10 @@ func TestPolynomialEval(t *testing.T) {
 
 		// f(1) = 1 + 2*1 + 3*1 = 6
 		six := scalarFromInt(grp, 6)
-		result = poly.Eval(one)
+		result, err := poly.Eval(one)
+		if err != nil {
+			t.Fatalf("Eval failed: %v", err)
+		}
 		if !result.Equal(six) {
 			t.Error("Expected f(1) = 6")
 		}
@@ -158,7 +170,7 @@ func TestPolynomialEval(t *testing.T) {
 		}
 	})
 
-	t.Run("EvalAtZeroPanics", func(t *testing.T) {
+	t.Run("EvalAtZeroReturnsError", func(t *testing.T) {
 		// Security check: evaluating at zero would reveal the secret
 		coeffs := make([]group.Scalar, 3)
 		for i := range coeffs {
@@ -167,14 +179,11 @@ func TestPolynomialEval(t *testing.T) {
 		}
 		poly, _ := NewPolynomial(grp, coeffs)
 
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic when evaluating at zero")
-			}
-		}()
-
 		zero := grp.NewScalar()
-		poly.Eval(zero) // Should panic
+		_, err := poly.Eval(zero)
+		if err == nil {
+			t.Error("Expected error when evaluating at zero")
+		}
 	})
 }
 
@@ -243,7 +252,10 @@ func TestPolynomialEvalZeroCoefficients(t *testing.T) {
 		// Start at 1, not 0 (evaluating at 0 would panic for security)
 		for i := 1; i < 10; i++ {
 			x := scalarFromInt(grp, i)
-			result := poly.Eval(x)
+			result, err := poly.Eval(x)
+			if err != nil {
+				t.Fatalf("Eval failed: %v", err)
+			}
 			if !result.Equal(constant) {
 				t.Errorf("Constant polynomial should always return constant")
 			}
@@ -288,5 +300,5 @@ func TestPolynomialEvalNilX(t *testing.T) {
 		}
 	}()
 
-	poly.Eval(nil)
+	_, _ = poly.Eval(nil)
 }

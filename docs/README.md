@@ -17,12 +17,12 @@ FROST Distributed Key Generation implementation in Go.
 
 ## Quick Links
 
-- **New users**: Start with [Getting Started](getting-started.md)
-- **CLI usage**: See [CLI Reference](cli.md)
-- **Integration**: Read [Architecture](architecture.md) then [Transport Layer](transport.md)
-- **Protocol details**: See [CertEq Protocol](certeq.md) and [DHT Discovery](dht.md)
-- **HSM/TPM integration**: See [Encryption & HostKey](encryption.md)
-- **Security**: See [Security Policy](security.md)
+- New users: start with [Getting Started](getting-started.md)
+- CLI usage: [CLI Reference](cli.md)
+- Integration: read [Architecture](architecture.md) then [Transport Layer](transport.md)
+- Protocol details: [CertEq Protocol](certeq.md) and [DHT Discovery](dht.md)
+- HSM/TPM integration: [Encryption & HostKey](encryption.md)
+- Security: [Security Policy](security.md)
 
 ## External Resources
 

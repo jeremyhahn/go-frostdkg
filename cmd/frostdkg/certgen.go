@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -106,6 +107,16 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Verify directory permissions are not more permissive than expected
+	info, err := os.Stat(certgenOutput)
+	if err != nil {
+		return fmt.Errorf("failed to stat output directory: %w", err)
+	}
+	if info.Mode().Perm()&0027 != 0 {
+		fmt.Printf("WARNING: Output directory %s has permissive permissions (%s). Consider restricting to 0750.\n",
+			certgenOutput, info.Mode().Perm())
+	}
+
 	if verbose {
 		fmt.Printf("Generating %s certificate...\n", certgenType)
 		fmt.Printf("  Name: %s\n", certgenName)
@@ -118,7 +129,6 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 	var privateKey interface{}
 	var publicKey interface{}
 	var keyType string
-	var err error
 
 	switch certgenType {
 	case "ecdsa":
@@ -126,6 +136,17 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate ECDSA key: %w", err)
 		}
+		defer func() {
+			// Zeroize the ECDSA private key D value
+			if ecdsaKey.D != nil {
+				if dWords := ecdsaKey.D.Bits(); len(dWords) > 0 {
+					for i := range dWords {
+						dWords[i] = 0
+					}
+				}
+				ecdsaKey.D.SetInt64(0)
+			}
+		}()
 		privateKey = ecdsaKey
 		publicKey = &ecdsaKey.PublicKey
 		keyType = "EC PRIVATE KEY"
@@ -135,6 +156,7 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate Ed25519 key: %w", err)
 		}
+		defer secmem.ZeroBytes(ed25519Priv)
 		privateKey = ed25519Priv
 		publicKey = ed25519Pub
 		keyType = "PRIVATE KEY"
@@ -162,7 +184,7 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA:                  false,
 	}
 
 	// Add hosts (DNS names and IP addresses)
@@ -205,6 +227,8 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		Type:  keyType,
 		Bytes: keyBytes,
 	})
+	defer secmem.ZeroBytes(keyPEM)
+	secmem.ZeroBytes(keyBytes)
 
 	// Write certificate file (readable permissions - certificates are public)
 	certPath := filepath.Join(certgenOutput, certgenName+".crt")

@@ -332,13 +332,11 @@ func (s *HTTPServer) handleJoinSession(w http.ResponseWriter, r *http.Request, s
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Check if session is full
 	if len(s.participants) >= s.sessionConfig.NumParticipants {
 		s.mu.Unlock()
 		s.writeError(w, r, http.StatusConflict, "session full")
-		s.mu.Lock()
 		return
 	}
 
@@ -347,7 +345,6 @@ func (s *HTTPServer) handleJoinSession(w http.ResponseWriter, r *http.Request, s
 		if hex.EncodeToString(p.hostPubkey) == hex.EncodeToString(joinMsg.HostPubkey) {
 			s.mu.Unlock()
 			s.writeError(w, r, http.StatusConflict, "participant already joined")
-			s.mu.Lock()
 			return
 		}
 	}
@@ -369,7 +366,7 @@ func (s *HTTPServer) handleJoinSession(w http.ResponseWriter, r *http.Request, s
 		hostPubkeys[idx] = p.hostPubkey
 	}
 
-	// Return session info with participant index
+	// Build response data while holding the lock
 	sessionInfo := &transport.SessionInfoMessage{
 		SessionID:       s.sessionID,
 		Threshold:       s.sessionConfig.Threshold,
@@ -378,10 +375,9 @@ func (s *HTTPServer) handleJoinSession(w http.ResponseWriter, r *http.Request, s
 		HostPubkeys:     hostPubkeys,
 		Ciphersuite:     s.sessionConfig.Ciphersuite,
 	}
-
 	s.mu.Unlock()
+
 	s.writeResponse(w, r, http.StatusCreated, sessionInfo)
-	s.mu.Lock()
 }
 
 // handleRound1 handles Round1 message submission and retrieval
@@ -413,35 +409,30 @@ func (s *HTTPServer) handleRound1Post(w http.ResponseWriter, r *http.Request, se
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Verify participant exists
 	if _, exists := s.participants[participantIdx]; !exists {
 		s.mu.Unlock()
 		s.writeError(w, r, http.StatusNotFound, "participant not found")
-		s.mu.Lock()
 		return
 	}
 
 	// Store Round1 data
 	s.round1Data[participantIdx] = round1Msg
 	s.logger.Debug("Received Round1 from participant %d (%d/%d)", participantIdx, len(s.round1Data), s.sessionConfig.NumParticipants)
-
 	s.mu.Unlock()
+
 	s.writeResponse(w, r, http.StatusCreated, map[string]string{"status": "accepted"})
-	s.mu.Lock()
 }
 
 // handleRound1Get returns aggregated Round1 data
 func (s *HTTPServer) handleRound1Get(w http.ResponseWriter, r *http.Request, sessionID string) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	// Wait for all participants to submit Round1
 	if len(s.round1Data) < s.sessionConfig.NumParticipants {
 		s.mu.RUnlock()
 		s.writeError(w, r, http.StatusAccepted, "waiting for all participants")
-		s.mu.RLock()
 		return
 	}
 
@@ -463,10 +454,9 @@ func (s *HTTPServer) handleRound1Get(w http.ResponseWriter, r *http.Request, ses
 		AllPOPs:        allPOPs,
 		AllPubnonces:   allPubnonces,
 	}
-
 	s.mu.RUnlock()
+
 	s.writeResponse(w, r, http.StatusOK, round1Agg)
-	s.mu.RLock()
 }
 
 // handleRound2 handles Round2 message submission and retrieval
@@ -496,21 +486,18 @@ func (s *HTTPServer) handleRound2Post(w http.ResponseWriter, r *http.Request, se
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, exists := s.participants[participantIdx]; !exists {
 		s.mu.Unlock()
 		s.writeError(w, r, http.StatusNotFound, "participant not found")
-		s.mu.Lock()
 		return
 	}
 
 	s.round2Data[participantIdx] = round2Msg
 	s.logger.Debug("Received Round2 from participant %d (%d/%d)", participantIdx, len(s.round2Data), s.sessionConfig.NumParticipants)
-
 	s.mu.Unlock()
+
 	s.writeResponse(w, r, http.StatusCreated, map[string]string{"status": "accepted"})
-	s.mu.Lock()
 }
 
 // handleRound2Get returns Round2 data for the requesting participant
@@ -522,13 +509,11 @@ func (s *HTTPServer) handleRound2Get(w http.ResponseWriter, r *http.Request, ses
 	}
 
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	// Check if all Round2 data is available
 	if len(s.round2Data) < s.sessionConfig.NumParticipants {
 		s.mu.RUnlock()
 		s.writeError(w, r, http.StatusAccepted, "waiting for all participants")
-		s.mu.RLock()
 		return
 	}
 
@@ -540,10 +525,9 @@ func (s *HTTPServer) handleRound2Get(w http.ResponseWriter, r *http.Request, ses
 			messages[idx] = r2
 		}
 	}
-
 	s.mu.RUnlock()
+
 	s.writeResponse(w, r, http.StatusOK, messages)
-	s.mu.RLock()
 }
 
 // handleCertEq handles CertEq signature submission
@@ -566,21 +550,18 @@ func (s *HTTPServer) handleCertEq(w http.ResponseWriter, r *http.Request, sessio
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, exists := s.participants[participantIdx]; !exists {
 		s.mu.Unlock()
 		s.writeError(w, r, http.StatusNotFound, "participant not found")
-		s.mu.Lock()
 		return
 	}
 
 	s.certEqSigs[participantIdx] = certEqMsg.Signature
 	s.logger.Debug("Received CertEq signature from participant %d (%d/%d)", participantIdx, len(s.certEqSigs), s.sessionConfig.NumParticipants)
-
 	s.mu.Unlock()
+
 	s.writeResponse(w, r, http.StatusCreated, map[string]string{"status": "accepted"})
-	s.mu.Lock()
 }
 
 // handleGetCertificate returns the final certificate
@@ -591,22 +572,19 @@ func (s *HTTPServer) handleGetCertificate(w http.ResponseWriter, r *http.Request
 	}
 
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	if s.certificate == nil {
 		s.mu.RUnlock()
 		s.writeError(w, r, http.StatusAccepted, "certificate not ready")
-		s.mu.RLock()
 		return
 	}
 
 	certMsg := &transport.CertificateMessage{
 		Certificate: s.certificate,
 	}
-
 	s.mu.RUnlock()
+
 	s.writeResponse(w, r, http.StatusOK, certMsg)
-	s.mu.RLock()
 }
 
 // getParticipantIndex extracts participant index from query parameters

@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -77,7 +78,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Verifying key share: %s\n", verifyShare)
 	}
 
-	// Clean the file path to prevent directory traversal attacks
+	// Clean the file path to normalize path separators and remove redundant elements
 	cleanPath := filepath.Clean(verifyShare)
 
 	// Read key share file
@@ -85,12 +86,15 @@ func runVerify(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read key share file: %w", err)
 	}
+	defer secmem.ZeroBytes(data)
 
 	// Parse JSON
 	var keyShare KeyShareOutput
 	if err := json.Unmarshal(data, &keyShare); err != nil {
 		return fmt.Errorf("failed to parse key share JSON: %w", err)
 	}
+	defer secmem.ZeroString(&keyShare.SecretShare)
+	defer secmem.ZeroString(&keyShare.RecoveryData)
 
 	if verbose {
 		fmt.Println("Key share file format: OK")
@@ -127,6 +131,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid secret_share hex: %w", err)
 	}
+	defer secmem.ZeroBytes(secretShare)
 	if len(secretShare) != 32 {
 		return fmt.Errorf("secret_share must be 32 bytes, got %d", len(secretShare))
 	}
@@ -167,6 +172,7 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid recovery_data hex: %w", err)
 		}
+		defer secmem.ZeroBytes(recoveryData)
 		if verbose {
 			fmt.Printf("Recovery data length: %d bytes\n", len(recoveryData))
 		}

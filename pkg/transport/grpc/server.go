@@ -18,6 +18,7 @@ package grpc
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
 	"net"
 	"sync"
@@ -80,7 +81,11 @@ func NewGRPCServer(cfg *transport.Config, sessionCfg *transport.SessionConfig) (
 	// Generate session ID if not provided
 	sessionID := sessionCfg.SessionID
 	if sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		randBytes := make([]byte, 16)
+		if _, err := crypto_rand.Read(randBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate session ID: %w", err)
+		}
+		sessionID = fmt.Sprintf("session-%x", randBytes)
 	}
 
 	// Create serializer
@@ -284,6 +289,11 @@ func (s *GRPCServer) ParticipantStream(stream proto.DKGCoordinator_ParticipantSt
 		// Handle join message to register participant
 		if msg.Type == proto.MessageType_MSG_TYPE_JOIN && !registered {
 			participantIdx = int(msg.SenderIdx)
+
+			// Validate participant index bounds
+			if participantIdx < 0 || participantIdx >= s.sessionConfig.NumParticipants {
+				return fmt.Errorf("participant index %d out of range [0, %d)", participantIdx, s.sessionConfig.NumParticipants)
+			}
 
 			// Register participant
 			s.participantsMu.Lock()

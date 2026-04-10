@@ -48,7 +48,7 @@ ENV PKCS11_MODULE=/usr/lib/softhsm/libsofthsm2.so
 
 # Install Go (version will be managed by devcontainer feature)
 # This is a fallback if the feature doesn't work
-ARG GO_VERSION=1.23.4
+ARG GO_VERSION=1.26.1
 RUN if ! command -v go &> /dev/null; then \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf - && \
     echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile.d/go.sh; \

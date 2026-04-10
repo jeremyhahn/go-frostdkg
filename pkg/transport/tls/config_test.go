@@ -685,9 +685,9 @@ func TestGenerateSelfSigned(t *testing.T) {
 				t.Errorf("expected %d hosts, got %d", len(tt.hosts), totalHosts)
 			}
 
-			// Verify it's a CA certificate
-			if !x509Cert.IsCA {
-				t.Error("expected certificate to be a CA")
+			// Verify it's a leaf certificate (not a CA)
+			if x509Cert.IsCA {
+				t.Error("expected certificate to not be a CA")
 			}
 
 			// Verify key usage
@@ -743,7 +743,10 @@ func TestGenerateSelfSignedAndUse(t *testing.T) {
 	}
 }
 
-// TestCipherSuites verifies that only TLS 1.3 cipher suites are configured
+// TestCipherSuites verifies TLS 1.3 configuration.
+// Go's TLS 1.3 implementation automatically uses all supported cipher suites
+// and ignores the CipherSuites field, so we verify it is not set and that
+// TLS 1.3 is properly enforced.
 func TestCipherSuites(t *testing.T) {
 	dir := t.TempDir()
 	certFile := filepath.Join(dir, "cert.crt")
@@ -766,22 +769,17 @@ func TestCipherSuites(t *testing.T) {
 		t.Fatalf("failed to create server config: %v", err)
 	}
 
-	expectedCiphers := []uint16{
-		tls.TLS_AES_256_GCM_SHA384,
-		tls.TLS_AES_128_GCM_SHA256,
-		tls.TLS_CHACHA20_POLY1305_SHA256,
+	// CipherSuites should not be set for TLS 1.3 - Go handles cipher suite
+	// selection automatically and ignores this field
+	if len(serverCfg.CipherSuites) != 0 {
+		t.Errorf("expected empty CipherSuites for TLS 1.3 (Go manages cipher suites automatically), got %d", len(serverCfg.CipherSuites))
 	}
 
-	if len(serverCfg.CipherSuites) != len(expectedCiphers) {
-		t.Errorf("expected %d cipher suites, got %d", len(expectedCiphers), len(serverCfg.CipherSuites))
+	// Verify TLS 1.3 is enforced
+	if serverCfg.MinVersion != tls.VersionTLS13 {
+		t.Errorf("expected MinVersion TLS 1.3, got 0x%x", serverCfg.MinVersion)
 	}
-
-	for i, expected := range expectedCiphers {
-		if i >= len(serverCfg.CipherSuites) {
-			break
-		}
-		if serverCfg.CipherSuites[i] != expected {
-			t.Errorf("cipher suite %d: expected 0x%x, got 0x%x", i, expected, serverCfg.CipherSuites[i])
-		}
+	if serverCfg.MaxVersion != tls.VersionTLS13 {
+		t.Errorf("expected MaxVersion TLS 1.3, got 0x%x", serverCfg.MaxVersion)
 	}
 }

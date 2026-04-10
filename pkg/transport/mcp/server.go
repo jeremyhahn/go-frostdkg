@@ -271,8 +271,9 @@ func (s *MCPServer) startHTTP(ctx context.Context) error {
 	mux.HandleFunc("/tools", s.handleToolsRequest)
 
 	s.httpServer = &http.Server{
-		Addr:    s.address,
-		Handler: mux,
+		Addr:              s.address,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
@@ -317,6 +318,7 @@ func (s *MCPServer) handleHTTPRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024) // 1MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)

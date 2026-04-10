@@ -61,6 +61,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"net"
 	"os"
 	"path/filepath"
@@ -81,11 +83,8 @@ func ServerConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS13,
 		MaxVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
-		CipherSuites: []uint16{
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-		},
+		// Note: CipherSuites is not set because Go's TLS 1.3 implementation
+		// automatically uses all supported cipher suites and ignores this field.
 	}
 
 	// If CA file is provided, enable mTLS with client certificate verification
@@ -110,11 +109,8 @@ func ClientConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, er
 	config := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		MaxVersion: tls.VersionTLS13,
-		CipherSuites: []uint16{
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-		},
+		// Note: CipherSuites is not set because Go's TLS 1.3 implementation
+		// automatically uses all supported cipher suites and ignores this field.
 		ServerName: serverName,
 	}
 
@@ -151,11 +147,8 @@ func InsecureClientConfig() *tls.Config {
 		MinVersion:         tls.VersionTLS13,
 		MaxVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true, //#nosec G402 -- Intentional for testing; see function documentation
-		CipherSuites: []uint16{
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-		},
+		// Note: CipherSuites is not set because Go's TLS 1.3 implementation
+		// automatically uses all supported cipher suites and ignores this field.
 	}
 }
 
@@ -167,6 +160,9 @@ func LoadCertificate(certFile, keyFile string) (tls.Certificate, error) {
 	if keyFile == "" {
 		return tls.Certificate{}, ErrEmptyKey
 	}
+
+	certFile = filepath.Clean(certFile)
+	keyFile = filepath.Clean(keyFile)
 
 	// Check if certificate file exists
 	if _, err := os.Stat(certFile); os.IsNotExist(err) {
@@ -255,7 +251,7 @@ func GenerateSelfSigned(hosts []string, validFor time.Duration) ([]byte, []byte,
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA:                  false,
 	}
 
 	// Add hosts (DNS names and IP addresses)
@@ -284,6 +280,7 @@ func GenerateSelfSigned(hosts []string, validFor time.Duration) ([]byte, []byte,
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal private key: %w", err)
 	}
+	defer secmem.ZeroBytes(keyBytes)
 
 	keyPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "EC PRIVATE KEY",

@@ -150,17 +150,19 @@ func TestSecretPackageZeroize(t *testing.T) {
 
 func TestSecureScalar(t *testing.T) {
 	t.Run("stores_and_returns_data", func(t *testing.T) {
-		original := []byte{0x01, 0x02, 0x03, 0x04}
-		ss := NewSecureScalar(original)
+		expected := []byte{0x01, 0x02, 0x03, 0x04}
+		input := []byte{0x01, 0x02, 0x03, 0x04}
+		ss := NewSecureScalar(input)
 
-		if !bytes.Equal(ss.Bytes(), original) {
+		if !bytes.Equal(ss.Bytes(), expected) {
 			t.Error("Bytes() should return stored data")
 		}
 
-		// Verify it's a copy
-		original[0] = 0xFF
-		if ss.Bytes()[0] == 0xFF {
-			t.Error("SecureScalar should store a copy, not reference")
+		// Verify the original input was zeroized for security
+		for _, b := range input {
+			if b != 0 {
+				t.Error("NewSecureScalar should zero the original input")
+			}
 		}
 	})
 

@@ -41,8 +41,6 @@
 package dkg
 
 import (
-	"crypto/rand"
-
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 )
 
@@ -125,10 +123,12 @@ func RepairShareStep1(
 	if err != nil {
 		return nil, err
 	}
+	defer lambda.Zeroize()
 
 	// Compute this helper's Lagrange-weighted contribution
 	// contribution = lambda * shareI
 	contribution := lambda.Mul(shareI)
+	defer contribution.Zeroize()
 
 	// Generate random delta values for all helpers except the last
 	numHelpers := len(helpers)
@@ -140,15 +140,7 @@ func RepairShareStep1(
 		// Use the group's RandomScalar for proper random scalar generation
 		delta, err := grp.RandomScalar()
 		if err != nil {
-			// Fallback: generate random bytes and deserialize
-			deltaBytes := make([]byte, grp.ScalarLength())
-			if _, err := rand.Read(deltaBytes); err != nil {
-				return nil, err
-			}
-			delta, err = grp.DeserializeScalar(deltaBytes)
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 		deltas[helpers[i]] = delta
 		randomSum = randomSum.Add(delta)
@@ -285,7 +277,9 @@ func computeLagrangeCoefficientForHelper(
 
 	// Initialize numerator and denominator to 1
 	numerator := scalarFromInt(grp, 1)
+	defer numerator.Zeroize()
 	denominator := scalarFromInt(grp, 1)
+	defer denominator.Zeroize()
 
 	// Compute the Lagrange basis polynomial L_i(x)
 	for j := 0; j < len(xCoords); j++ {
@@ -314,6 +308,7 @@ func computeLagrangeCoefficientForHelper(
 	if err != nil {
 		return nil, err
 	}
+	defer denominatorInv.Zeroize()
 
 	return numerator.Mul(denominatorInv), nil
 }

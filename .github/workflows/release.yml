@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  GO_VERSION: '1.25.5'
+  GO_VERSION: '1.26.1'
   REGISTRY: ghcr.io
   IMAGE_NAME: jeremyhahn/frostdkg
 
@@ -164,7 +164,7 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.release << 'DOCKERFILE'
-          FROM golang:1.25-alpine AS builder
+          FROM golang:1.26.1-alpine AS builder
           RUN apk add --no-cache git ca-certificates
           WORKDIR /build
           COPY go.mod go.sum ./

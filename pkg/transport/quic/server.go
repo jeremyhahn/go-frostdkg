@@ -18,6 +18,7 @@ package quic
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -108,7 +109,11 @@ func NewQUICServer(cfg *transport.Config, sessionCfg *transport.SessionConfig) (
 	// Generate session ID if not provided
 	sessionID := sessionCfg.SessionID
 	if sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		randBytes := make([]byte, 16)
+		if _, err := crypto_rand.Read(randBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate session ID: %w", err)
+		}
+		sessionID = fmt.Sprintf("session-%x", randBytes)
 	}
 
 	s := &QUICServer{
@@ -150,7 +155,7 @@ func (s *QUICServer) Start(ctx context.Context) error {
 		MaxIncomingUniStreams:          -1, // Disable unidirectional streams
 		KeepAlivePeriod:                s.getKeepAliveInterval(),
 		EnableDatagrams:                false,
-		Allow0RTT:                      true, // Enable 0-RTT for faster reconnections
+		Allow0RTT:                      false, // Disabled: 0-RTT is vulnerable to replay attacks
 		MaxStreamReceiveWindow:         safeUint64(maxMsgSize),
 		MaxConnectionReceiveWindow:     safeUint64(maxMsgSize * 10),
 		DisablePathMTUDiscovery:        false,
@@ -345,6 +350,12 @@ func (s *QUICServer) handleConnection(conn *quic.Conn) {
 			}
 
 			participantIdx = envelope.SenderIdx
+
+			// Validate participant index bounds
+			if participantIdx < 0 || participantIdx >= s.sessionConfig.NumParticipants {
+				_ = s.sendError(stream, fmt.Errorf("participant index %d out of range [0, %d)", participantIdx, s.sessionConfig.NumParticipants))
+				return
+			}
 
 			// Register participant
 			s.participantsMu.Lock()

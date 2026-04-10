@@ -22,6 +22,7 @@ import (
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // VSS represents a Verifiable Secret Sharing scheme using a polynomial.
@@ -87,8 +88,18 @@ func Generate(cs ciphersuite.Ciphersuite, seed []byte, t int) (*VSS, error) {
 		// Use ciphersuite's H3 function for hash-to-scalar
 		// H3 properly handles scalar encoding for all groups
 		scalar := cs.H3(input)
+		secmem.ZeroBytes(input)
 		coeffs[i] = scalar
 	}
+
+	// Defer zeroization of intermediate coefficients
+	defer func() {
+		for _, c := range coeffs {
+			if c != nil {
+				c.Zeroize()
+			}
+		}
+	}()
 
 	poly, err := NewPolynomial(grp, coeffs)
 	if err != nil {
@@ -110,7 +121,7 @@ func (v *VSS) SecshareFor(i int) (group.Scalar, error) {
 
 	// Compute x = i + 1 to avoid evaluating at 0
 	x := scalarFromInt(v.grp, i+1)
-	return v.f.Eval(x), nil
+	return v.f.Eval(x)
 }
 
 // Secshares returns the secret shares for participants with indices 0..n-1.
@@ -140,6 +151,16 @@ func (v *VSS) Secshares(n int) ([]group.Scalar, error) {
 // without revealing the polynomial coefficients.
 func (v *VSS) Commit() *VSSCommitment {
 	coeffs := v.f.Coefficients()
+
+	// Zeroize the coefficient copies
+	defer func() {
+		for _, coeff := range coeffs {
+			if coeff != nil {
+				coeff.Zeroize()
+			}
+		}
+	}()
+
 	elements := make([]group.Element, len(coeffs))
 
 	for i, coeff := range coeffs {
@@ -273,13 +294,8 @@ func VSSCommitmentFromBytes(grp group.Group, b []byte, t int) (*VSSCommitment, e
 		// Check if this is the zero/identity element (all zeros)
 		// This is needed for proper round-trip serialization since
 		// some groups serialize identity as all zeros
-		isZero := true
-		for _, by := range elemBytes {
-			if by != 0 {
-				isZero = false
-				break
-			}
-		}
+		// Use constant-time comparison to prevent timing side-channels
+		isZero := subtle.ConstantTimeCompare(elemBytes, make([]byte, len(elemBytes))) == 1
 
 		if isZero {
 			elements[i] = grp.Identity()

@@ -57,11 +57,14 @@
 package dkg
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // Domain separation prefix for FROST-DKG operations.
@@ -130,15 +133,15 @@ func (o *FROSTDKGOutput) Zeroize() {
 }
 
 // ZeroizeWithGroup clears sensitive data with explicit overwriting using the group.
-// This is more thorough than Zeroize as it attempts to overwrite scalar data
-// with zero values before niling references.
+// This is more thorough than Zeroize as it overwrites scalar data in place
+// before niling references.
 func (o *FROSTDKGOutput) ZeroizeWithGroup(grp group.Group) {
 	if o == nil || grp == nil {
 		return
 	}
-	// Attempt to overwrite the secret share with a zero scalar
+	// Zeroize the secret share's internal memory in place
 	if o.SecretShare != nil {
-		o.SecretShare = grp.NewScalar()
+		o.SecretShare.Zeroize()
 	}
 	// Overwrite public shares with identity elements
 	if o.PublicShares != nil {
@@ -212,6 +215,7 @@ func FROSTDKGGenerateVSS(cs ciphersuite.Ciphersuite, seed []byte, t int) (*VSS, 
 
 		// Use ciphersuite's hash-to-scalar with domain separation
 		coeffs[i] = hashToScalar(cs, "vss coeffs", input)
+		secmem.ZeroBytes(input)
 	}
 
 	poly, err := NewPolynomial(grp, coeffs)
@@ -247,6 +251,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	// Including pubkey provides additional domain separation and follows
 	// RFC 6979 best practices for deterministic signature nonces.
 	secretBytes := grp.SerializeScalar(secret)
+	defer secmem.ZeroBytes(secretBytes)
 	pubkeyBytes, err := grp.SerializeElement(pubkey)
 	if err != nil {
 		return nil, err
@@ -257,6 +262,8 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	copy(nonceInput[len(secretBytes):], pubkeyBytes)
 	copy(nonceInput[len(secretBytes)+len(pubkeyBytes):], identifierBytes)
 	k := hashToScalar(cs, "pop nonce", nonceInput)
+	defer k.Zeroize()
+	secmem.ZeroBytes(nonceInput)
 
 	// R = k * G
 	R := grp.ScalarBaseMult(k)
@@ -274,13 +281,16 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	copy(challengeInput[len(identifierBytes):], pubkeyBytes)
 	copy(challengeInput[len(identifierBytes)+len(pubkeyBytes):], RBytes)
 	c := cs.HDKG(challengeInput)
+	defer c.Zeroize()
 
 	// Response: μ = k + a_0 * c
 	mu := c.Mul(secret)
 	mu = k.Add(mu)
+	defer mu.Zeroize()
 
 	// POP = R || μ (Schnorr signature format)
 	muBytes := grp.SerializeScalar(mu)
+	defer secmem.ZeroBytes(muBytes)
 	pop := make([]byte, len(RBytes)+len(muBytes))
 	copy(pop, RBytes)
 	copy(pop[len(RBytes):], muBytes)
@@ -477,6 +487,9 @@ func FROSTDKGCoordinatorRound1(cs ciphersuite.Ciphersuite, msgs []*FROSTDKGParti
 			return nil, NewFaultyParticipantError(i, "commitment has wrong number of coefficients")
 		}
 		pubkey := msg.Commitment.CommitmentToSecret()
+		if pubkey.IsIdentity() {
+			return nil, ErrIdentityElementInCommitment
+		}
 		if !FROSTDKGVerifyPOP(cs, msg.POP, pubkey, i) {
 			return nil, ErrFROSTDKGInvalidPOP
 		}
@@ -545,6 +558,9 @@ func FROSTDKGParticipantRound2(
 			return nil, nil, NewFaultyParticipantError(i, "commitment has wrong number of coefficients")
 		}
 		pubkey := commitment.CommitmentToSecret()
+		if pubkey.IsIdentity() {
+			return nil, nil, ErrIdentityElementInCommitment
+		}
 		if !FROSTDKGVerifyPOP(cs, coordMsg.AllPOPs[i], pubkey, i) {
 			return nil, nil, ErrFROSTDKGInvalidPOP
 		}
@@ -799,6 +815,7 @@ func frostDKGECDH(cs ciphersuite.Ciphersuite, mySeckey []byte, myPubnonce, their
 	if err != nil {
 		return nil, err
 	}
+	defer secmem.ZeroBytes(sharedBytes)
 	myNonceBytes, err := grp.SerializeElement(myPubnonce)
 	if err != nil {
 		return nil, err
@@ -820,7 +837,9 @@ func frostDKGECDH(cs ciphersuite.Ciphersuite, mySeckey []byte, myPubnonce, their
 	data = append(data, sharedBytes...)
 
 	// Derive pad using ciphersuite hash
-	return hashToBytes(cs, "ecdh pad", data), nil
+	pad := hashToBytes(cs, "ecdh pad", data)
+	secmem.ZeroBytes(data)
+	return pad, nil
 }
 
 // FROSTDKGEncParticipantRound1 performs encrypted round 1 of FROST-DKG.
@@ -842,17 +861,30 @@ func FROSTDKGEncParticipantRound1(
 		return nil, nil, ErrInvalidParticipantIndex
 	}
 
+	// Check for duplicate host public keys
+	for i := 0; i < len(hostPubkeys); i++ {
+		for j := i + 1; j < len(hostPubkeys); j++ {
+			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
+				return nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+			}
+		}
+	}
+
 	// First do the basic FROST-DKG round 1
 	baseState, baseMsg, shares, err := FROSTDKGParticipantRound1(cs, seed, t, n, index)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Generate nonce for ECDH: secnonce = H3("secnonce" || seed || random)
-	nonceInput := make([]byte, len(seed)+len(random))
+	// Generate nonce for ECDH: secnonce = H3("secnonce" || seed || random || index)
+	idxBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(idxBytes, uint32(index))
+	nonceInput := make([]byte, len(seed)+len(random)+4)
 	copy(nonceInput, seed)
 	copy(nonceInput[len(seed):], random)
+	copy(nonceInput[len(seed)+len(random):], idxBytes)
 	secnonce := hashToScalar(cs, "secnonce", nonceInput)
+	secmem.ZeroBytes(nonceInput)
 
 	// Compute public nonce
 	pubnonce := grp.ScalarBaseMult(secnonce)
@@ -875,7 +907,12 @@ func FROSTDKGEncParticipantRound1(
 		// Deserialize their public key
 		theirPubkey, err := grp.DeserializeElement(hostPubkeys[j])
 		if err != nil {
+			secmem.ZeroBytes(shareBytes)
 			return nil, nil, err
+		}
+		if theirPubkey.IsIdentity() {
+			secmem.ZeroBytes(shareBytes)
+			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
 		}
 
 		// For encryption, we use our own pubnonce for both positions since
@@ -883,14 +920,18 @@ func FROSTDKGEncParticipantRound1(
 		// use our pubnonce (from coordinator) for both positions to match.
 		pad, err := frostDKGECDH(cs, hostSeckey, pubnonce, theirPubkey, pubnonce, true)
 		if err != nil {
+			secmem.ZeroBytes(shareBytes)
 			return nil, nil, err
 		}
 
 		// XOR the share with the pad (truncated to share length)
 		if len(pad) < len(shareBytes) {
+			secmem.ZeroBytes(shareBytes)
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
 		encryptedShares[j] = xorBytes(shareBytes, pad[:len(shareBytes)])
+		secmem.ZeroBytes(shareBytes)
+		secmem.ZeroBytes(pad)
 	}
 
 	state := &FROSTDKGEncParticipantState{
@@ -919,6 +960,15 @@ func FROSTDKGEncCoordinatorRound1(
 	n := len(msgs)
 	if n != len(hostPubkeys) {
 		return nil, nil, nil, nil, ErrFROSTDKGInvalidParticipantCount
+	}
+
+	// Check for duplicate host public keys
+	for i := 0; i < len(hostPubkeys); i++ {
+		for j := i + 1; j < len(hostPubkeys); j++ {
+			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
+				return nil, nil, nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+			}
+		}
 	}
 
 	// Extract base messages
@@ -1003,6 +1053,9 @@ func FROSTDKGEncParticipantRound2(
 		if err != nil {
 			return nil, nil, err
 		}
+		if theirPubkey.IsIdentity() {
+			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+		}
 		theirPubnonce, err := grp.DeserializeElement(coordMsg.AllPubnonces[j])
 		if err != nil {
 			return nil, nil, err
@@ -1018,11 +1071,14 @@ func FROSTDKGEncParticipantRound2(
 
 		// Decrypt the share
 		if len(pad) < scalarLen {
+			secmem.ZeroBytes(pad)
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
 		shareBytes := xorBytes(encShare, pad[:scalarLen])
+		secmem.ZeroBytes(pad)
 
 		share, err := grp.DeserializeScalar(shareBytes)
+		secmem.ZeroBytes(shareBytes)
 		if err != nil {
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
@@ -1148,7 +1204,9 @@ func FROSTDKGFullParticipantStep1(
 	copy(seedInput, hostSeckey)
 	copy(seedInput[len(hostSeckey):], random)
 	seedScalar := hashToScalar(cs, "participant seed", seedInput)
+	secmem.ZeroBytes(seedInput)
 	seed := cs.Group().SerializeScalar(seedScalar)
+	defer secmem.ZeroBytes(seed)
 
 	// Perform encrypted round 1
 	encState, encMsg, err := FROSTDKGEncParticipantRound1(cs, seed, hostSeckey, hostPubkeys, t, index, random)
@@ -1310,6 +1368,7 @@ func frostDKGECDHWithHostKey(cs ciphersuite.Ciphersuite, hostKey HostKey, myPubn
 	if err != nil {
 		return nil, err
 	}
+	defer secmem.ZeroBytes(sharedBytes)
 
 	// Serialize nonces
 	myNonceBytes, err := grp.SerializeElement(myPubnonce)
@@ -1334,7 +1393,9 @@ func frostDKGECDHWithHostKey(cs ciphersuite.Ciphersuite, hostKey HostKey, myPubn
 	data = append(data, sharedBytes...)
 
 	// Derive pad using ciphersuite hash
-	return hashToBytes(cs, "ecdh pad", data), nil
+	pad := hashToBytes(cs, "ecdh pad", data)
+	secmem.ZeroBytes(data)
+	return pad, nil
 }
 
 // FROSTDKGEncParticipantStateHK holds encrypted DKG state with HostKey support.
@@ -1346,7 +1407,7 @@ type FROSTDKGEncParticipantStateHK struct {
 }
 
 // Zeroize clears sensitive data from the state.
-// Note: HostKey is an interface and may be hardware-backed; it cannot be zeroized here.
+// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
 func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 	if s == nil {
 		return
@@ -1355,6 +1416,9 @@ func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 		s.FROSTDKGParticipantState.Zeroize()
 	}
 	s.FROSTDKGParticipantState = nil
+	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
+		sk.Zeroize()
+	}
 	s.HostKey = nil
 	s.Pubnonce = nil
 }
@@ -1378,17 +1442,30 @@ func FROSTDKGEncParticipantRound1WithHostKey(
 		return nil, nil, ErrInvalidParticipantIndex
 	}
 
+	// Check for duplicate host public keys
+	for i := 0; i < len(hostPubkeys); i++ {
+		for j := i + 1; j < len(hostPubkeys); j++ {
+			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
+				return nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+			}
+		}
+	}
+
 	// First do the basic FROST-DKG round 1
 	baseState, baseMsg, shares, err := FROSTDKGParticipantRound1(cs, seed, t, n, index)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Generate nonce for ECDH: secnonce = H3("secnonce" || seed || random)
-	nonceInput := make([]byte, len(seed)+len(random))
+	// Generate nonce for ECDH: secnonce = H3("secnonce" || seed || random || index)
+	idxBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(idxBytes, uint32(index))
+	nonceInput := make([]byte, len(seed)+len(random)+4)
 	copy(nonceInput, seed)
 	copy(nonceInput[len(seed):], random)
+	copy(nonceInput[len(seed)+len(random):], idxBytes)
 	secnonce := hashToScalar(cs, "secnonce", nonceInput)
+	secmem.ZeroBytes(nonceInput)
 
 	// Compute public nonce
 	pubnonce := grp.ScalarBaseMult(secnonce)
@@ -1408,17 +1485,32 @@ func FROSTDKGEncParticipantRound1WithHostKey(
 			continue
 		}
 
+		// Check host public key is not the identity element
+		theirPubkeyElem, err := grp.DeserializeElement(hostPubkeys[j])
+		if err != nil {
+			secmem.ZeroBytes(shareBytes)
+			return nil, nil, err
+		}
+		if theirPubkeyElem.IsIdentity() {
+			secmem.ZeroBytes(shareBytes)
+			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+		}
+
 		// For encryption, we use our own pubnonce for both positions
 		pad, err := frostDKGECDHWithHostKey(cs, hostKey, pubnonce, hostPubkeys[j], pubnonce, true)
 		if err != nil {
+			secmem.ZeroBytes(shareBytes)
 			return nil, nil, err
 		}
 
 		// XOR the share with the pad (truncated to share length)
 		if len(pad) < len(shareBytes) {
+			secmem.ZeroBytes(shareBytes)
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
 		encryptedShares[j] = xorBytes(shareBytes, pad[:len(shareBytes)])
+		secmem.ZeroBytes(shareBytes)
+		secmem.ZeroBytes(pad)
 	}
 
 	state := &FROSTDKGEncParticipantStateHK{
@@ -1474,6 +1566,15 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 			continue
 		}
 
+		// Check host public key is not the identity element
+		theirPubkeyElem, err := grp.DeserializeElement(state.HostPubkeys[j])
+		if err != nil {
+			return nil, nil, fmt.Errorf("host public key %d is invalid: %w", j, err)
+		}
+		if theirPubkeyElem.IsIdentity() {
+			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+		}
+
 		// Deserialize their public nonce
 		theirPubnonce, err := grp.DeserializeElement(coordMsg.AllPubnonces[j])
 		if err != nil {
@@ -1490,11 +1591,14 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 
 		// Decrypt the share
 		if len(pad) < scalarLen {
+			secmem.ZeroBytes(pad)
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
 		shareBytes := xorBytes(encShare, pad[:scalarLen])
+		secmem.ZeroBytes(pad)
 
 		share, err := grp.DeserializeScalar(shareBytes)
+		secmem.ZeroBytes(shareBytes)
 		if err != nil {
 			return nil, nil, ErrFROSTDKGDecryptionFailed
 		}
@@ -1518,6 +1622,7 @@ type FROSTDKGFullParticipantStateHK1 struct {
 }
 
 // Zeroize clears sensitive data from the state.
+// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
 func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 	if s == nil {
 		return
@@ -1526,6 +1631,9 @@ func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 		s.EncState.Zeroize()
 	}
 	s.EncState = nil
+	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
+		sk.Zeroize()
+	}
 	s.HostKey = nil
 }
 
@@ -1541,6 +1649,7 @@ type FROSTDKGFullParticipantStateHK2 struct {
 }
 
 // Zeroize clears sensitive data from the state.
+// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
 func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 	if s == nil {
 		return
@@ -1549,6 +1658,9 @@ func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 		s.Output.Zeroize()
 	}
 	s.Output = nil
+	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
+		sk.Zeroize()
+	}
 	s.HostKey = nil
 }
 
@@ -1567,7 +1679,9 @@ func FROSTDKGFullParticipantStep1WithHostKey(
 	copy(seedInput, pubkey)
 	copy(seedInput[len(pubkey):], random)
 	seedScalar := hashToScalar(cs, "participant seed", seedInput)
+	secmem.ZeroBytes(seedInput)
 	seed := cs.Group().SerializeScalar(seedScalar)
+	defer secmem.ZeroBytes(seed)
 
 	// Perform encrypted round 1
 	encState, encMsg, err := FROSTDKGEncParticipantRound1WithHostKey(cs, seed, hostKey, hostPubkeys, t, index, random)
