@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/fxamacker/cbor/v2 v2.9.0
 	github.com/google/uuid v1.6.0
-	github.com/jeremyhahn/go-frost v0.1.5-alpha
+	github.com/jeremyhahn/go-frost v0.1.7-alpha
 	github.com/libp2p/go-libp2p v0.47.0
 	github.com/libp2p/go-libp2p-kad-dht v0.38.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0
@@ -28,6 +28,8 @@ require (
 require (
 	filippo.io/bigmod v0.1.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/awnumar/memcall v0.5.0 // indirect
+	github.com/awnumar/memguard v0.23.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
