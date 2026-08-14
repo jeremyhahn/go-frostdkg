@@ -62,11 +62,12 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // ServerConfig creates a TLS 1.3 server configuration

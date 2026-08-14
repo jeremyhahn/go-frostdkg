@@ -164,7 +164,7 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.release << 'DOCKERFILE'
-          FROM golang:1.26.1-alpine AS builder
+          FROM golang:1.26.6-alpine AS builder
           RUN apk add --no-cache git ca-certificates
           WORKDIR /build
           COPY go.mod go.sum ./
@@ -176,12 +176,43 @@ jobs:
               -ldflags="-X main.version=${VERSION} -X main.commit=${COMMIT} -s -w" \
               -o /build/frostdkg ./cmd/frostdkg
 
-          FROM alpine:3.20
+          FROM alpine:3.24
           RUN apk add --no-cache ca-certificates && adduser -D -u 1000 frostdkg
           COPY --from=builder /build/frostdkg /usr/local/bin/frostdkg
           USER frostdkg
           ENTRYPOINT ["/usr/local/bin/frostdkg"]
           DOCKERFILE
+
+      # devops.md §8: every container image is gated on CRITICAL/HIGH *before*
+      # it reaches a registry. Build the amd64 leg locally, scan it, then
+      # publish the multi-arch manifest from the same layer cache.
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: go-frostdkg:scan
+          build-args: |
+            VERSION=${{ needs.create-release.outputs.version }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+
+      # The trivy CLI works identically on both hosts; trivy-action's setup
+      # cannot authenticate to github.com from a Gitea runner.
+      - name: Install trivy CLI
+        run: |
+          TRIVY_VERSION=$(curl -fsSL https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" trivy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Trivy image gate (fail on CRITICAL/HIGH)
+        run: trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 go-frostdkg:scan
 
       - name: Build and push
         uses: docker/build-push-action@v6

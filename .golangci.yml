@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+  modules-download-mode: readonly
+
+# devops.md §8 requires staticcheck, errcheck, unused, ineffassign, misspell and
+# gocritic. The first four plus govet are golangci-lint v2's "standard" default
+# set; they are listed explicitly so the mandatory suite is readable here rather
+# than inferred from the tool's defaults.
+linters:
+  enable:
+    - errcheck
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+  settings:
+    gocritic:
+      # Default checks only. The opinionated style/experimental tags produce
+      # noise disproportionate to what they catch.
+      disabled-checks:
+        - ifElseChain
+        # Schnorr/FROST notation is single capital letters — R is the nonce
+        # commitment, not a stray capitalized local. Renaming them to satisfy
+        # the linter would make the code harder to check against the spec.
+        - captLocal
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests trade strictness for readability: an unchecked error in a fixture
+      # fails the test anyway, and log.Fatal in a runnable Example is the
+      # documented idiom rather than a defect.
+      - linters:
+          - errcheck
+          - gocritic
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - vendor
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - vendor

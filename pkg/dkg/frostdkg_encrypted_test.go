@@ -391,7 +391,7 @@ func TestFROSTDKGEncParticipantRound2Errors(t *testing.T) {
 			HostSeckey:               state1.HostSeckey,
 			HostPubkeys: [][]byte{
 				hostPubkeys[0],
-				[]byte{0xFF, 0xFF, 0xFF}, // Invalid pubkey for participant 1
+				{0xFF, 0xFF, 0xFF}, // Invalid pubkey for participant 1
 				hostPubkeys[2],
 			},
 			Pubnonce: state1.Pubnonce,
@@ -410,7 +410,7 @@ func TestFROSTDKGEncParticipantRound2Errors(t *testing.T) {
 			FROSTDKGCoordinatorMsg: validCoordMsg.FROSTDKGCoordinatorMsg,
 			AllPubnonces: [][]byte{
 				allPubnonces[0],
-				[]byte{0xFF, 0xFF, 0xFF}, // Invalid pubnonce for participant 1
+				{0xFF, 0xFF, 0xFF}, // Invalid pubnonce for participant 1
 				allPubnonces[2],
 			},
 		}

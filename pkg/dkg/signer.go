@@ -24,11 +24,11 @@ import (
 	"math/big"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
-	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed25519_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed448_shake256"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ristretto255_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/secp256k1_sha256"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // Signer provides signing and verification operations for a specific curve.

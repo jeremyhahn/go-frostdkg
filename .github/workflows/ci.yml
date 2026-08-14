@@ -179,14 +179,31 @@ jobs:
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
+      # Writes SARIF (uploaded below) and exits non-zero on findings to gate the
+      # build — devops.md §8 makes gosec blocking, so continue-on-error is gone.
+      #
+      # Every -exclude rule below was checked against the code; the reason is
+      # recorded here so the next person does not have to re-derive it. Keep
+      # this list identical to GOSEC_EXCLUDE in the Makefile.
+      #   G115 integer overflow on conversion: every flagged site is a
+      #        deliberate narrowing to byte — the big-endian serialization
+      #        idiom (byte(v >> 24), …) in pkg/dkg, and byte(participantIdx)
+      #        where the index is a small ordinal bounded by the DKG group
+      #        size. NOT a blanket "we accept overflow": a NEW narrowing
+      #        conversion without a preceding bound is a real finding this
+      #        exclusion will hide, so review them by hand.
+      #   G118 goroutine with context.Background/TODO: the single site is the
+      #        QUIC accept loop, which outlives the Start call that spawns it
+      #        and is terminated by Stop through shutdownChan. Binding it to
+      #        the caller's start-up context would cancel the listener.
       - name: Run gosec security scanner
         run: |
-          gosec -exclude-generated \
+          gosec -exclude=G115,G118 \
+            -exclude-generated \
             -severity medium \
             -confidence medium \
             -exclude-dir=test -exclude-dir=vendor \
             -fmt sarif -out gosec-results.sarif ./...
-        continue-on-error: true
 
       - name: Upload gosec results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -196,11 +213,79 @@ jobs:
           sarif_file: gosec-results.sarif
           category: gosec
 
+      - name: Verify module integrity
+        run: go mod verify
+
+      # Calls the Makefile target so the no-fix allowlist lives in exactly one
+      # place (devops.md §4) and a new, fixable vulnerability fails the build
+      # instead of being swallowed by a blanket ignore.
       - name: Run govulncheck
+        run: make vulncheck
+
+  # devops.md §8: trivy fs gates dependency CVEs, leaked secrets and
+  # misconfigurations in the tree on CRITICAL/HIGH, on both hosts.
+  #
+  # trivy-action downloads its setup from github.com and cannot authenticate
+  # from a Gitea runner, and code-scanning SARIF upload is a GitHub-only
+  # mechanic — both are guarded on github.server_url. The Gitea leg installs
+  # the trivy CLI from the release tarball and runs the same gate, so neither
+  # host is left unscanned.
+  trivy:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Trivy scan (SARIF for code scanning)
+        if: github.server_url == 'https://github.com'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: 0
+          skip-dirs: test
+
+      - name: Upload Trivy SARIF
+        if: always() && github.server_url == 'https://github.com'
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-fs
+
+      - name: Trivy gate (fail on CRITICAL/HIGH)
+        if: github.server_url == 'https://github.com'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          format: table
+          skip-dirs: test
+
+      - name: Install trivy CLI (Gitea)
+        if: github.server_url != 'https://github.com'
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          # GO-2024-3218 in libp2p-kad-dht has no fix available - see docs/security.md
-          govulncheck ./... || echo "NOTE: Known vulnerability GO-2024-3218 has no fix yet"
+          TRIVY_VERSION=$(curl -fsSL https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" trivy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Trivy gate (Gitea)
+        if: github.server_url != 'https://github.com'
+        run: trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 --skip-dirs test .
 
   # Job 5: Build (cross-platform)
   build:
@@ -317,13 +402,14 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         if: github.server_url == 'https://github.com'
         with:
           image-ref: go-frostdkg:${{ github.sha }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          exit-code: 0
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -332,3 +418,18 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+
+      # devops.md §8: the image scan gates, it does not merely report. The CLI
+      # runs the gate on both hosts — trivy-action's setup cannot authenticate
+      # to github.com from a Gitea runner.
+      - name: Install trivy CLI
+        run: |
+          TRIVY_VERSION=$(curl -fsSL https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" trivy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Trivy image gate (fail on CRITICAL/HIGH)
+        run: trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 go-frostdkg:${{ github.sha }}

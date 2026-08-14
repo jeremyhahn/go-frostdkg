@@ -270,23 +270,85 @@ tidy:
 	$(GOMOD) tidy
 
 # =============================================================================
-# Security Targets
+# Security Targets — devops.md §8, the mandatory analysis suite
 # =============================================================================
 
+# `security` is the contract: CI calls this target so the pipeline and a
+# developer's machine run exactly the same checks. The container image is
+# scanned by docker-build, which is where it exists.
 .PHONY: security
-security:
-	@echo "Running security scan with gosec..."
-	@go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude-generated -severity medium -confidence medium -exclude-dir=test -exclude-dir=vendor ./...
+security: gosec vulncheck mod-verify trivy
+	@echo "Security suite passed"
 
-# NOTE: GO-2024-3218 (github.com/libp2p/go-libp2p-kad-dht) has no fix available as of 2025-01.
-# This is tracked and will be updated when a fix is released.
-# See: https://pkg.go.dev/vuln/GO-2024-3218
+# gosec exclusions. §8 requires a written justification beside every rule; keep
+# this list identical to the one in .github/workflows/ci.yml.
+#   G115 integer overflow on conversion: every site gosec flags is a deliberate
+#        narrowing to byte — the big-endian serialization idiom
+#        (byte(v >> 24), byte(v >> 16), …) in pkg/dkg/refresh.go and
+#        pkg/dkg/frostdkg.go, and byte(participantIdx) where the index is a
+#        small participant ordinal bounded by the DKG group size.
+#        NOT a blanket "we accept overflow" — a NEW narrowing conversion
+#        without a preceding bound is a real finding this exclusion will hide,
+#        so review narrowing conversions by hand.
+#   G118 goroutine with context.Background/TODO: the single site is
+#        pkg/transport/quic/server.go's accept loop, which outlives the Start
+#        call that spawns it and is terminated by Stop through shutdownChan.
+#        Binding it to the caller's start-up context would cancel the listener.
+GOSEC_EXCLUDE := G115,G118
+
+.PHONY: gosec
+gosec:
+	@echo "Running security scan with gosec..."
+	@go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude=$(GOSEC_EXCLUDE) -exclude-generated -severity medium -confidence medium -exclude-dir=test -exclude-dir=vendor ./...
+
+# govulncheck is blocking (§8) and is also the §9 forcing function for toolchain
+# currency. Two findings have NO fixed version published upstream and are
+# allowlisted here by ID; every other finding — including a new one in these
+# same modules — fails the target. Re-check on each dependency bump and delete
+# an entry the day its fix ships.
+#   GO-2024-3218 (allowlisted 2026-08-14) github.com/libp2p/go-libp2p-kad-dht:
+#       no fixed version upstream. See docs/security.md.
+#   GO-2026-4479 (allowlisted 2026-08-14) github.com/pion/dtls/v2, reached
+#       indirectly through libp2p's WebRTC transport: no fixed version upstream.
+GOVULN_ALLOW := GO-2024-3218 GO-2026-4479
+
 .PHONY: vulncheck
 vulncheck:
 	@echo "Running vulnerability check with govulncheck..."
-	@go run golang.org/x/vuln/cmd/govulncheck@latest ./... || \
-		(echo ""; echo "NOTE: GO-2024-3218 in libp2p-kad-dht has no fix available yet."; \
-		 echo "See docs/security.md for details."; exit 0)
+	@OUT=$$(go run golang.org/x/vuln/cmd/govulncheck@latest ./... 2>&1) || true; \
+	echo "$$OUT"; \
+	FOUND=$$(echo "$$OUT" | sed -n 's/^Vulnerability #[0-9]*: \(GO-[0-9][0-9-]*\).*/\1/p' | sort -u); \
+	for id in $(GOVULN_ALLOW); do FOUND=$$(echo "$$FOUND" | grep -vx "$$id" || true); done; \
+	FOUND=$$(echo "$$FOUND" | tr -d '[:space:]'); \
+	if [ -n "$$FOUND" ]; then \
+		echo ""; \
+		echo "govulncheck: vulnerabilities outside the documented allowlist — fix them or record an exception in GOVULN_ALLOW"; \
+		exit 1; \
+	fi
+	@echo "govulncheck passed (only allowlisted no-fix findings remain)"
+
+.PHONY: mod-verify
+mod-verify:
+	@echo "Verifying module integrity against go.sum..."
+	@go mod verify
+
+.PHONY: trivy
+trivy:
+	@echo "Running Trivy filesystem scan..."
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 .; \
+	else \
+		echo "trivy not found - skipping (install: https://trivy.dev/docs/getting-started/installation/)"; \
+	fi
+
+.PHONY: trivy-image
+trivy-image:
+	@echo "Running Trivy image scan on $(DOCKER_IMAGE):$(DOCKER_TAG)..."
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 $(DOCKER_IMAGE):$(DOCKER_TAG); \
+	else \
+		echo "trivy not found - skipping (install: https://trivy.dev/docs/getting-started/installation/)"; \
+	fi
 
 # =============================================================================
 # Docker Targets
@@ -296,6 +358,7 @@ vulncheck:
 docker-build:
 	@echo "Building Docker image..."
 	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) -f test/integration/Dockerfile .
+	@$(MAKE) --no-print-directory trivy-image
 
 .PHONY: docker-test
 docker-test: docker-build
@@ -320,8 +383,13 @@ clean:
 # =============================================================================
 
 .PHONY: ci
-ci: tidy fmt-check lint security vulncheck test check build-cli
+ci: tidy fmt-check lint security test check build-cli
 	@echo "CI checks completed successfully"
+
+# ci-fast: the subset that needs no Docker (devops.md §4).
+.PHONY: ci-fast
+ci-fast: fmt-check lint security test check build-cli
+	@echo "Fast CI checks completed successfully"
 
 .PHONY: ci-full
 ci-full: ci integration-test
@@ -384,12 +452,16 @@ help:
 	@echo "  lint                   - Run linters (go vet, golangci-lint)"
 	@echo "  tidy                   - Tidy dependencies"
 	@echo ""
-	@echo "Security:"
-	@echo "  security               - Run security scan with gosec"
+	@echo "Security (devops.md §8):"
+	@echo "  security               - Run the full suite: gosec, govulncheck, go mod verify, trivy fs"
+	@echo "  gosec                  - Run security scan with gosec"
 	@echo "  vulncheck              - Run vulnerability check with govulncheck"
+	@echo "  mod-verify             - Verify module integrity against go.sum"
+	@echo "  trivy                  - Trivy filesystem scan (dependency CVEs + secrets)"
+	@echo "  trivy-image            - Trivy scan of the built container image"
 	@echo ""
 	@echo "Docker:"
-	@echo "  docker-build           - Build Docker image"
+	@echo "  docker-build           - Build Docker image and scan it with Trivy"
 	@echo "  docker-test            - Run tests in Docker"
 	@echo ""
 	@echo "Maintenance:"
@@ -397,6 +469,7 @@ help:
 	@echo ""
 	@echo "CI:"
 	@echo "  ci                     - Run CI checks (matches GitHub Actions workflow)"
+	@echo "  ci-fast                - Run CI checks that need no Docker"
 	@echo "  ci-full                - Run full CI with integration tests"
 
 .DEFAULT_GOAL := help

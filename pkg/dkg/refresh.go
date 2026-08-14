@@ -678,11 +678,9 @@ func generateRandomSeed(length int) ([]byte, error) {
 	return seed, nil
 }
 
-// cryptoRandRead is a wrapper around crypto/rand.Read for testing purposes.
-var cryptoRandRead = func(b []byte) (int, error) {
-	// Import crypto/rand inline to avoid import cycle
-	return cryptoRead(b)
-}
+// cryptoRandRead is a wrapper around crypto/rand.Read that tests replace to
+// force read failures.
+var cryptoRandRead = cryptoRead
 
 // evaluatePolynomialAtIdentifier evaluates a polynomial at a given identifier.
 // Identifiers are converted to scalars for evaluation.
