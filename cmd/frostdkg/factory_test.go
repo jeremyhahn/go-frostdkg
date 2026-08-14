@@ -116,27 +116,62 @@ func (m *MockTransportFactory) NewCoordinator(protocol transport.Protocol, cfg *
 // test binds it.
 const libp2pCoordinatorPort = 9000
 
-// waitForTCPPortFree blocks until the port can be bound again, and fails the
-// test if it never comes free. libp2p tears its listener down asynchronously,
-// so a coordinator's Stop returning does not mean the socket is released yet;
+// waitForTCPPortFree polls until the port can be bound again, or the timeout
+// expires. It exists because libp2p tears its listener down asynchronously, so
+// a coordinator's Stop returning does not mean the socket is released yet;
 // sleeping a fixed interval instead of waiting on the real condition is what
 // made this package flake under -race on a loaded runner.
-func waitForTCPPortFree(t *testing.T, port int) {
-	t.Helper()
-
+func waitForTCPPortFree(port int, timeout time.Duration) error {
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(timeout)
 
 	for {
 		ln, err := net.Listen("tcp", addr)
 		if err == nil {
 			_ = ln.Close()
-			return
+			return nil
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("port %d still bound after 30s: %v", port, err)
+			return fmt.Errorf("port %d still bound after %s: %w", port, timeout, err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// releaseLibp2pPort hands tcp/9000 back for the next test in this binary. It is
+// best-effort: a failure here is reported, not fatal, because the port is not
+// exclusively ours (see requireLibp2pPort).
+func releaseLibp2pPort(t *testing.T) {
+	t.Helper()
+	// Short bound on purpose: this only has to outlast our own listener's
+	// asynchronous teardown. If the port is still busy it belongs to someone
+	// else, and the next test's requireLibp2pPort will skip rather than wait.
+	if err := waitForTCPPortFree(libp2pCoordinatorPort, 5*time.Second); err != nil {
+		t.Logf("libp2p coordinator port not released: %v", err)
+	}
+}
+
+// requireLibp2pPort skips rather than fails when tcp/9000 is held by something
+// outside this test binary.
+//
+// The port is not ours to reserve. DefaultTransportFactory pins every libp2p
+// coordinator to a fixed 0.0.0.0:9000 regardless of the configured address, and
+// the Gitea runner gives job containers the HOST network namespace
+// (container.network: "host"), so a concurrent job from any repository on that
+// host contends for the same port. That is an environment the test cannot
+// control, which is what testing-guidelines.md §Fault Injection sanctions
+// probe-and-skip for — and this probe checks the real condition rather than
+// guessing from the environment.
+//
+// The durable fix is for the factory to honour the configured address instead
+// of rewriting it to 9000; that changes production listen behaviour and is
+// tracked separately as an owner decision.
+func requireLibp2pPort(t *testing.T) {
+	t.Helper()
+	if err := waitForTCPPortFree(libp2pCoordinatorPort, 30*time.Second); err != nil {
+		t.Skipf("skipping: tcp/%d is held by something outside this test binary "+
+			"(the runner shares the host network namespace): %v",
+			libp2pCoordinatorPort, err)
 	}
 }
 
@@ -146,7 +181,7 @@ func TestDefaultTransportFactory(t *testing.T) {
 
 	// Anything earlier in the binary that stood up a libp2p coordinator may
 	// still be releasing tcp/9000.
-	waitForTCPPortFree(t, libp2pCoordinatorPort)
+	releaseLibp2pPort(t)
 
 	tests := []struct {
 		name            string
@@ -187,6 +222,13 @@ func TestDefaultTransportFactory(t *testing.T) {
 		})
 
 		t.Run("coordinator-"+tt.name, func(t *testing.T) {
+			// Only the libp2p coordinator is pinned to the shared fixed port,
+			// so only this leg has to give way when something else holds it.
+			// The other protocols keep running either way.
+			if tt.protocol == transport.ProtocolLibp2p {
+				requireLibp2pPort(t)
+			}
+
 			cfg := &transport.Config{
 				Protocol: tt.protocol,
 				Address:  "localhost:9000",
@@ -227,7 +269,7 @@ func TestDefaultTransportFactory(t *testing.T) {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer cancel()
 						_ = coordinator.Stop(ctx)
-						waitForTCPPortFree(t, libp2pCoordinatorPort)
+						releaseLibp2pPort(t)
 					})
 				}
 			}
