@@ -888,6 +888,12 @@ func TestRunCoordinatorInvalidProtocol(t *testing.T) {
 	coordinatorListen = "localhost:9999"
 	protocol = "invalid-protocol"
 	verbose = false
+	// runCoordinator refuses a network transport without TLS before it ever
+	// reaches the factory that validates the protocol name, so without this the
+	// assertion below sees the TLS error instead. Nothing is dialled here — the
+	// protocol is rejected first — so this only satisfies the gate.
+	insecure = true
+	defer func() { insecure = false }()
 
 	err := runCoordinator(coordinatorCmd, nil)
 	require.Error(t, err)
@@ -998,6 +1004,10 @@ func TestRunParticipantInvalidProtocol(t *testing.T) {
 	participantOutput = filepath.Join(t.TempDir(), "output.json")
 	protocol = "invalid-protocol"
 	verbose = false
+	// See TestRunCoordinatorInvalidProtocol: the TLS gate precedes protocol
+	// validation, and no connection is attempted for an unknown protocol.
+	insecure = true
+	defer func() { insecure = false }()
 
 	err := runParticipant(participantCmd, nil)
 	require.Error(t, err)
@@ -1263,8 +1273,10 @@ func TestRunCoordinatorLibp2pDefaultAddress(t *testing.T) {
 
 	protocol = "grpc" // Reset
 
-	// Allow libp2p background goroutines to complete shutdown
-	time.Sleep(500 * time.Millisecond)
+	// Hand tcp/9000 back before the next test binds it. libp2p releases the
+	// listener asynchronously, so waiting on the port itself is the only
+	// reliable signal -- a fixed sleep is what made this flake under -race.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 }
 
 // TestRunCoordinatorLibp2pCustomAddress tests libp2p with custom address
@@ -1281,8 +1293,10 @@ func TestRunCoordinatorLibp2pCustomAddress(t *testing.T) {
 
 	protocol = "grpc" // Reset
 
-	// Allow libp2p background goroutines to complete shutdown
-	time.Sleep(500 * time.Millisecond)
+	// Hand tcp/9000 back before the next test binds it. libp2p releases the
+	// listener asynchronously, so waiting on the port itself is the only
+	// reliable signal -- a fixed sleep is what made this flake under -race.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 }
 
 // TestRunParticipantWithValidHostkey tests participant with valid 32-byte hostkey
@@ -1717,6 +1731,11 @@ func TestRunParticipantConnectionFailure(t *testing.T) {
 	participantOutput = filepath.Join(t.TempDir(), "output.json")
 	protocol = "grpc"
 	verbose = false
+	// The subject here is the dial failure, not TLS. Without this the TLS gate
+	// short-circuits before any connection is attempted and the test asserts
+	// against the wrong error.
+	insecure = true
+	defer func() { insecure = false }()
 
 	err := runParticipant(participantCmd, nil)
 	require.Error(t, err)
@@ -1941,8 +1960,10 @@ func TestRunParticipantLibp2pProtocol(t *testing.T) {
 
 	protocol = "grpc" // Reset
 
-	// Allow libp2p background goroutines to complete shutdown
-	time.Sleep(500 * time.Millisecond)
+	// Hand tcp/9000 back before the next test binds it. libp2p releases the
+	// listener asynchronously, so waiting on the port itself is the only
+	// reliable signal -- a fixed sleep is what made this flake under -race.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 }
 
 // TestRunCoordinatorLibp2pProtocol tests libp2p coordinator
@@ -1959,8 +1980,10 @@ func TestRunCoordinatorLibp2pProtocol(t *testing.T) {
 
 	protocol = "grpc" // Reset
 
-	// Allow libp2p background goroutines to complete shutdown
-	time.Sleep(500 * time.Millisecond)
+	// Hand tcp/9000 back before the next test binds it. libp2p releases the
+	// listener asynchronously, so waiting on the port itself is the only
+	// reliable signal -- a fixed sleep is what made this flake under -race.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 }
 
 // TestRunCoordinatorLibp2pWithMultiaddrParsing tests libp2p multiaddr parsing
@@ -1977,8 +2000,10 @@ func TestRunCoordinatorLibp2pWithMultiaddrParsing(t *testing.T) {
 
 	protocol = "grpc" // Reset
 
-	// Allow libp2p background goroutines to complete shutdown
-	time.Sleep(500 * time.Millisecond)
+	// Hand tcp/9000 back before the next test binds it. libp2p releases the
+	// listener asynchronously, so waiting on the port itself is the only
+	// reliable signal -- a fixed sleep is what made this flake under -race.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 }
 
 // TestCertgenEd25519WithSingleHost tests Ed25519 with single host
@@ -2717,7 +2742,11 @@ func TestViperBindings(t *testing.T) {
 func TestCoordinatorDefaultValues(t *testing.T) {
 	listenFlag := coordinatorCmd.Flags().Lookup("listen")
 	require.NotNil(t, listenFlag)
-	assert.Equal(t, "0.0.0.0:9000", listenFlag.DefValue)
+	// Loopback, not 0.0.0.0: a coordinator must not be reachable from off-box
+	// merely because someone omitted --listen. Exposing it is the deliberate
+	// act. Note cmd/frostdkg/factory.go still compares Address against the old
+	// "0.0.0.0:9000" default as a sentinel — see task #25.
+	assert.Equal(t, "127.0.0.1:9000", listenFlag.DefValue)
 
 	ciphersuiteFlag := coordinatorCmd.Flags().Lookup("ciphersuite")
 	require.NotNil(t, ciphersuiteFlag)

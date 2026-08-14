@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -108,9 +109,44 @@ func (m *MockTransportFactory) NewCoordinator(protocol transport.Protocol, cfg *
 	return args.Get(0).(transport.Coordinator), args.Error(1)
 }
 
+// libp2pCoordinatorPort is the TCP port every libp2p coordinator in this
+// package ends up on: DefaultTransportFactory rewrites any configured listen
+// address to /ip4/0.0.0.0/tcp/9000 (see NewCoordinator). Because it is fixed
+// and shared, tests that stand one up must hand the port back before the next
+// test binds it.
+const libp2pCoordinatorPort = 9000
+
+// waitForTCPPortFree blocks until the port can be bound again, and fails the
+// test if it never comes free. libp2p tears its listener down asynchronously,
+// so a coordinator's Stop returning does not mean the socket is released yet;
+// sleeping a fixed interval instead of waiting on the real condition is what
+// made this package flake under -race on a loaded runner.
+func waitForTCPPortFree(t *testing.T, port int) {
+	t.Helper()
+
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	deadline := time.Now().Add(30 * time.Second)
+
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			_ = ln.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("port %d still bound after 30s: %v", port, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestDefaultTransportFactory tests the default factory implementation
 func TestDefaultTransportFactory(t *testing.T) {
 	factory := &DefaultTransportFactory{}
+
+	// Anything earlier in the binary that stood up a libp2p coordinator may
+	// still be releasing tcp/9000.
+	waitForTCPPortFree(t, libp2pCoordinatorPort)
 
 	tests := []struct {
 		name            string
@@ -139,11 +175,12 @@ func TestDefaultTransportFactory(t *testing.T) {
 				assert.Error(t, err)
 				assert.Nil(t, participant)
 			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, participant)
-				// The libp2p participant binds a socket on construction.
-				// Release it so later subtests are not racing a leaked host.
-				if participant != nil {
+				// Gate cleanup on the assertions, not on `participant != nil`:
+				// the constructors return a typed nil on error, which is not
+				// equal to nil through the interface and would panic below.
+				if assert.NoError(t, err) && assert.NotNil(t, participant) {
+					// The libp2p participant binds a socket on construction.
+					// Release it so later subtests are not racing a leaked host.
 					t.Cleanup(func() { _ = participant.Disconnect() })
 				}
 			}
@@ -179,16 +216,18 @@ func TestDefaultTransportFactory(t *testing.T) {
 				assert.Error(t, err)
 				assert.Nil(t, coordinator)
 			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, coordinator)
-				// The libp2p coordinator is pinned to tcp/9000 by
-				// DefaultTransportFactory, so leaking it here makes every
-				// later libp2p coordinator in this binary fail to bind.
-				if coordinator != nil {
+				// Gate cleanup on the assertions, not on `coordinator != nil`:
+				// the constructors return a typed nil on error, which is not
+				// equal to nil through the interface and would panic below.
+				if assert.NoError(t, err) && assert.NotNil(t, coordinator) {
+					// The libp2p coordinator is pinned to tcp/9000 by
+					// DefaultTransportFactory, so leaking it here makes every
+					// later libp2p coordinator in this binary fail to bind.
 					t.Cleanup(func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer cancel()
 						_ = coordinator.Stop(ctx)
+						waitForTCPPortFree(t, libp2pCoordinatorPort)
 					})
 				}
 			}
