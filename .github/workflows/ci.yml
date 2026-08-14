@@ -190,6 +190,7 @@ jobs:
 
       - name: Upload gosec results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
+        if: github.server_url == 'https://github.com'
         continue-on-error: true
         with:
           sarif_file: gosec-results.sarif
@@ -317,6 +318,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
+        if: github.server_url == 'https://github.com'
         with:
           image-ref: go-frostdkg:${{ github.sha }}
           format: 'sarif'
@@ -325,6 +327,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
+        if: github.server_url == 'https://github.com'
         continue-on-error: true
         with:
           sarif_file: trivy-results.sarif
