@@ -41,6 +41,7 @@ func TestClientWriteMessageOversized(t *testing.T) {
 		Protocol:       transport.ProtocolQUIC,
 		MaxMessageSize: 50, // Very small
 		Timeout:        5 * time.Second,
+		TLSCAFile:      certFile,
 	}
 
 	client, err := NewQUICClient(clientConfig)

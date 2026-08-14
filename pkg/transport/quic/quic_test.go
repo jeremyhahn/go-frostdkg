@@ -22,13 +22,11 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
-	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 )
 
 const (
@@ -327,6 +325,7 @@ func TestQUICClientConnect(t *testing.T) {
 		Protocol:  transport.ProtocolQUIC,
 		CodecType: "json",
 		Timeout:   testTimeout,
+		TLSCAFile: certFile,
 	}
 
 	client, err := NewQUICClient(clientConfig)
@@ -1094,6 +1093,7 @@ func TestQUICMultipleCodecs(t *testing.T) {
 				Protocol:  transport.ProtocolQUIC,
 				CodecType: codec,
 				Timeout:   testTimeout,
+				TLSCAFile: certFile,
 			}
 
 			client, err := NewQUICClient(clientConfig)
@@ -1261,29 +1261,10 @@ func TestQUICWaitForParticipantsAfterShutdown(t *testing.T) {
 func createTestCerts(t *testing.T) (certFile, keyFile string, cleanup func()) {
 	t.Helper()
 
-	hosts := []string{"127.0.0.1", "localhost"}
-	certPEM, keyPEM, err := tlsconfig.GenerateSelfSigned(hosts, 24*time.Hour)
-	if err != nil {
-		t.Fatalf("Failed to generate test certs: %v", err)
-	}
-
-	certFile = t.TempDir() + "/test.crt"
-	keyFile = t.TempDir() + "/test.key"
-
-	if err := os.WriteFile(certFile, certPEM, 0600); err != nil {
-		t.Fatalf("Failed to write cert file: %v", err)
-	}
-
-	if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
-		t.Fatalf("Failed to write key file: %v", err)
-	}
-
-	cleanup = func() {
-		_ = os.Remove(certFile)
-		_ = os.Remove(keyFile)
-	}
-
-	return certFile, keyFile, cleanup
+	// Shared with every client in this package so the two ends of the
+	// connection agree on the certificate; see testpki_test.go.
+	certFile, keyFile = testPKIFiles(t)
+	return certFile, keyFile, func() {}
 }
 
 // startTestServer creates and starts a test server.
@@ -1333,13 +1314,7 @@ func stopTestServer(t *testing.T, server *QUICServer) {
 func createTestClient(t *testing.T) *QUICClient {
 	t.Helper()
 
-	config := &transport.Config{
-		Protocol:  transport.ProtocolQUIC,
-		CodecType: "json",
-		Timeout:   testTimeout,
-	}
-
-	client, err := NewQUICClient(config)
+	client, err := NewQUICClient(testClientConfig(t, testTimeout))
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

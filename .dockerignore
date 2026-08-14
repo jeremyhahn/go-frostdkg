@@ -1,0 +1,55 @@
+# The integration image does `COPY . .`, so anything not excluded here is baked
+# into a layer. Two reasons that matters: image size, and the fact that a layer
+# is readable by anyone who can pull the image.
+
+# Version control and CI metadata.
+.git
+.gitignore
+.github
+.dockerignore
+
+# Credentials. The image build takes its Gitea module token as a BuildKit
+# secret, which is mounted on tmpfs for a single RUN and never lands in a layer
+# (see test/integration/Dockerfile). These patterns are the second line of
+# defence: if a credentials file is ever written into the working tree, it must
+# not be copyable into an image.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+gomodauth*
+**/secrets/
+
+# Build output and local scratch — rebuilt inside the image anyway.
+#
+# These mirror .gitignore's build-artifact entries, and the mirroring is the
+# point. A developer's working tree normally holds a compiled ./frostdkg; git
+# ignores it, but `COPY . .` did not, so `make integration-test` shipped
+# whatever binary happened to be lying around into the image. One built in
+# March against Go 1.26.1 put 31 CRITICAL/HIGH CVEs into the trivy gate —
+# findings that belonged to a stale local artifact, not to anything the repo
+# actually builds or ships. CI never saw it (fresh checkout), which is exactly
+# what makes it the kind of failure that wastes an afternoon.
+/frostdkg
+bin/
+dist/
+build/
+vendor/
+coverage/
+coverage*.html
+*.out
+*.test
+*.log
+*.exe
+*.so
+*.dylib
+*.wip
+go.work
+go.work.sum
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store

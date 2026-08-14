@@ -21,12 +21,10 @@ package quic
 import (
 	"context"
 	"crypto/rand"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
-	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 )
 
 // TestQUICServerStopBeforeStart tests Stop before Start.
@@ -332,29 +330,10 @@ func TestQUICConnectOpenStreamError(t *testing.T) {
 func finalCreateCerts(t *testing.T) (certFile, keyFile string, cleanup func()) {
 	t.Helper()
 
-	hosts := []string{"127.0.0.1", "localhost"}
-	certPEM, keyPEM, err := tlsconfig.GenerateSelfSigned(hosts, 24*time.Hour)
-	if err != nil {
-		t.Fatalf("Failed to generate test certs: %v", err)
-	}
-
-	certFile = t.TempDir() + "/test.crt"
-	keyFile = t.TempDir() + "/test.key"
-
-	if err := os.WriteFile(certFile, certPEM, 0600); err != nil {
-		t.Fatalf("Failed to write cert file: %v", err)
-	}
-
-	if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
-		t.Fatalf("Failed to write key file: %v", err)
-	}
-
-	cleanup = func() {
-		_ = os.Remove(certFile)
-		_ = os.Remove(keyFile)
-	}
-
-	return certFile, keyFile, cleanup
+	// Shared with every client in this package so the two ends of the
+	// connection agree on the certificate; see testpki_test.go.
+	certFile, keyFile = testPKIFiles(t)
+	return certFile, keyFile, func() {}
 }
 
 func finalStopServer(t *testing.T, server *QUICServer) {
@@ -371,13 +350,7 @@ func finalStopServer(t *testing.T, server *QUICServer) {
 func finalCreateClient(t *testing.T) *QUICClient {
 	t.Helper()
 
-	config := &transport.Config{
-		Protocol:  transport.ProtocolQUIC,
-		CodecType: "json",
-		Timeout:   10 * time.Second,
-	}
-
-	client, err := NewQUICClient(config)
+	client, err := NewQUICClient(testClientConfig(t, 10*time.Second))
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
