@@ -15,6 +15,10 @@ on:
     branches: [master, main, develop]
   pull_request:
     branches: [master, main, develop]
+  # Re-run by hand without an empty commit. The shared runner host is
+  # occasionally saturated enough that a job is starved out with no output at
+  # all, and this Gitea build exposes no rerun API (devops.md §5).
+  workflow_dispatch:
 
 permissions:
   contents: read
