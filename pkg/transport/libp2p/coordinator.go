@@ -158,8 +158,15 @@ func (pc *P2PCoordinator) Stop(ctx context.Context) error {
 	var stopErr error
 
 	pc.stopOnce.Do(func() {
+		// NewP2PCoordinator binds the listen address, so a coordinator that
+		// was constructed but never started still holds the socket. Release
+		// it here rather than leaking it for the lifetime of the process; the
+		// not-started error is still reported to the caller.
 		if !pc.started.Load() {
 			stopErr = fmt.Errorf("coordinator not started")
+			if err := pc.host.Close(); err != nil {
+				stopErr = fmt.Errorf("coordinator not started (host close: %w)", err)
+			}
 			return
 		}
 

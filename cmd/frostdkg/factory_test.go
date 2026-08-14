@@ -141,6 +141,11 @@ func TestDefaultTransportFactory(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, participant)
+				// The libp2p participant binds a socket on construction.
+				// Release it so later subtests are not racing a leaked host.
+				if participant != nil {
+					t.Cleanup(func() { _ = participant.Disconnect() })
+				}
 			}
 		})
 
@@ -176,6 +181,16 @@ func TestDefaultTransportFactory(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, coordinator)
+				// The libp2p coordinator is pinned to tcp/9000 by
+				// DefaultTransportFactory, so leaking it here makes every
+				// later libp2p coordinator in this binary fail to bind.
+				if coordinator != nil {
+					t.Cleanup(func() {
+						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer cancel()
+						_ = coordinator.Stop(ctx)
+					})
+				}
 			}
 		})
 	}

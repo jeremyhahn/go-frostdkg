@@ -147,8 +147,14 @@ func (pp *P2PParticipant) Disconnect() error {
 	var disconnectErr error
 
 	pp.stopOnce.Do(func() {
+		// NewP2PParticipant creates the libp2p host up front, so a participant
+		// that never connected still holds it. Release it here rather than
+		// leaking it; the not-connected error is still reported to the caller.
 		if !pp.connected.Load() {
 			disconnectErr = transport.ErrNotConnected
+			if err := pp.host.Close(); err != nil {
+				disconnectErr = fmt.Errorf("%w (host close: %w)", transport.ErrNotConnected, err)
+			}
 			return
 		}
 
