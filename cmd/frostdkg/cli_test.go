@@ -2523,51 +2523,48 @@ func TestAllProtocolsParticipant(t *testing.T) {
 
 // TestCertgenCertFileWriteError tests certificate file write error
 func TestCertgenCertFileWriteError(t *testing.T) {
-	// Create a directory where we can't write
+	// The fault is a directory sitting where the .crt belongs, so the write
+	// fails with EISDIR. It used to be a read-only parent directory, which
+	// proves nothing in CI: job containers run as root, root bypasses
+	// discretionary permission checks, the write succeeds and the test fails
+	// only on the runner (testing-guidelines.md §Fault Injection). EISDIR holds
+	// for every uid.
 	tmpDir := t.TempDir()
-	readOnlyDir := filepath.Join(tmpDir, "readonly")
-	err := os.Mkdir(readOnlyDir, 0755)
-	require.NoError(t, err)
 
 	certgenType = "ecdsa"
-	certgenOutput = readOnlyDir
-	certgenName = "test"
+	certgenOutput = tmpDir
+	certgenName = "cert-write-error"
 	certgenDays = 365
 	certgenHosts = []string{"localhost"}
 	verbose = false
 
-	// First run should succeed
-	err = runCertgen(certgenCmd, nil)
-	require.NoError(t, err)
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, certgenName+".crt"), 0750))
 
-	// Make directory read-only to force write error
-	err = os.Chmod(readOnlyDir, 0444)
-	require.NoError(t, err)
-	defer func() { _ = os.Chmod(readOnlyDir, 0755) }() // Restore for cleanup
-
-	certgenName = "test2" // Different name to avoid existing file
-	err = runCertgen(certgenCmd, nil)
-	// Should fail - can't write to read-only directory
+	err := runCertgen(certgenCmd, nil)
 	require.Error(t, err)
+	// Name the step that failed: without this the test passes on any error,
+	// including one raised before the write is ever attempted.
+	assert.Contains(t, err.Error(), "failed to write certificate")
 }
 
 // TestConfigInitWriteError tests config init file write error
 func TestConfigInitWriteError(t *testing.T) {
-	// Create a read-only directory
+	// A directory occupying the config path: MkdirAll of its parent still
+	// succeeds, so the run reaches the write and fails there with EISDIR —
+	// which is the step this test is about, and which root cannot bypass. A
+	// read-only parent directory (the previous approach) both skipped the write
+	// entirely and did nothing at all under CI's root uid.
 	tmpDir := t.TempDir()
-	readOnlyDir := filepath.Join(tmpDir, "readonly")
-	err := os.MkdirAll(readOnlyDir, 0755)
-	require.NoError(t, err)
+	configOutput = filepath.Join(tmpDir, "config.yaml")
+	// --force is required, not incidental: the directory standing in for the
+	// config file also satisfies the "already exists" check, which returns
+	// before the write and would have this test assert on the wrong error.
+	configForce = true
+	t.Cleanup(func() { configForce = false })
 
-	// Make it read-only
-	err = os.Chmod(readOnlyDir, 0444)
-	require.NoError(t, err)
-	defer func() { _ = os.Chmod(readOnlyDir, 0755) }()
+	require.NoError(t, os.Mkdir(configOutput, 0750))
 
-	configOutput = filepath.Join(readOnlyDir, "config.yaml")
-	configForce = false
-
-	err = runConfigInit(configInitCmd, nil)
+	err := runConfigInit(configInitCmd, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write config file")
 }
@@ -2612,19 +2609,16 @@ func TestCertgenKeyFileWriteError(t *testing.T) {
 	certgenHosts = []string{"localhost"}
 	verbose = false
 
-	// First create the cert successfully
+	// The certificate is written before the key, so putting a directory at the
+	// key path exercises exactly the leg this test names: the cert write
+	// succeeds and the key write fails with EISDIR. Root bypasses a read-only
+	// key file, which is why the previous version passed locally and failed in
+	// CI (testing-guidelines.md §Fault Injection).
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, certgenName+".key"), 0750))
+
 	err := runCertgen(certgenCmd, nil)
-	require.NoError(t, err)
-
-	// Now make key file read-only and try again
-	keyPath := filepath.Join(tmpDir, "write-error-test.key")
-	err = os.Chmod(keyPath, 0444)
-	require.NoError(t, err)
-	defer func() { _ = os.Chmod(keyPath, 0644) }()
-
-	// Try to overwrite - should fail on key write
-	err = runCertgen(certgenCmd, nil)
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to write private key")
 }
 
 // TestCertgenEd25519KeyFileWriteError tests Ed25519 key file write error
@@ -2638,19 +2632,12 @@ func TestCertgenEd25519KeyFileWriteError(t *testing.T) {
 	certgenHosts = []string{"localhost"}
 	verbose = false
 
-	// First create successfully
+	// Same uid-independent fault as the ECDSA case above.
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, certgenName+".key"), 0750))
+
 	err := runCertgen(certgenCmd, nil)
-	require.NoError(t, err)
-
-	// Make key file read-only
-	keyPath := filepath.Join(tmpDir, "ed25519-write-error.key")
-	err = os.Chmod(keyPath, 0444)
-	require.NoError(t, err)
-	defer func() { _ = os.Chmod(keyPath, 0644) }()
-
-	// Try to overwrite
-	err = runCertgen(certgenCmd, nil)
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to write private key")
 }
 
 // TestCoordinatorCmdRequiredFlags verifies required flags are marked
