@@ -23,10 +23,12 @@ permissions:
 env:
   GO_VERSION: "1.26.6"        # latest stable — bumped portfolio-wide (devops.md §9)
   COVERAGE_THRESHOLD: 60      # CUSTOMIZE: matches COVERAGE_THRESHOLD in the Makefile
-  # CUSTOMIZE: first-party deps resolve as tagged modules from Gitea, which is
-  # not in the public checksum database (dependency-resolution.md).
-  GOPROXY: direct
-  GOSUMDB: off
+  # No GOPROXY/GOSUMDB overrides here on purpose. The runner injects
+  # GOPRIVATE=github.com/jeremyhahn/* plus the tokenised GIT_CONFIG rewrite to
+  # Gitea, which already exempts first-party modules from both the proxy and
+  # the checksum database. Setting GOSUMDB=off at the workflow level would
+  # disable checksum verification for every THIRD-party dependency too — that
+  # is how a retagged upstream slipped past verification in go-quicbaas.
 
 jobs:
   lint:
@@ -90,6 +92,10 @@ jobs:
       #        QUIC accept loop, which outlives the Start call that spawns it
       #        and is terminated by Stop through shutdownChan. Binding it to
       #        the caller's start-up context would cancel the listener.
+      # -stdout -verbose=text alongside the SARIF file (ci-template v1.1): with
+      # `-fmt sarif -out` alone the findings go only into the artifact, and on
+      # Gitea — which has no code-scanning API to upload it to — a failure
+      # prints nothing at all in the job log.
       - name: Run gosec
         run: |
           gosec -exclude=G115,G118 \
@@ -97,7 +103,7 @@ jobs:
             -severity medium \
             -confidence medium \
             -exclude-dir=test -exclude-dir=vendor \
-            -fmt sarif -out gosec.sarif ./...
+            -fmt sarif -out gosec.sarif -stdout -verbose=text ./...
 
       - name: Upload gosec SARIF
         # Gitea has no code-scanning API; the upload 404s and fails the job.
