@@ -2,7 +2,7 @@
 # This container runs comprehensive end-to-end integration tests
 # in an isolated environment separate from the host OS.
 
-FROM golang:1.26.1-alpine
+FROM golang:1.26.5-alpine
 
 # Install test dependencies
 RUN apk add --no-cache \
