@@ -547,8 +547,8 @@ func TestP256SignerVerifyUncompressedFormat(t *testing.T) {
 	for i := range secretKeyBytes {
 		secretKeyBytes[i] = byte(i + 1)
 	}
-	privKey.D = new(big.Int).SetBytes(secretKeyBytes)
-	privKey.X, privKey.Y = curve.ScalarBaseMult(secretKeyBytes)
+	privKey.D = new(big.Int).SetBytes(secretKeyBytes)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+	privKey.X, privKey.Y = curve.ScalarBaseMult(secretKeyBytes) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 
 	// Create signature
 	signature, err := signer.Sign(secretKeyBytes, message, nil)

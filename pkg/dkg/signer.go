@@ -105,8 +105,8 @@ func (s *P256Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]b
 	curve := elliptic.P256()
 	privKey := new(ecdsa.PrivateKey)
 	privKey.Curve = curve
-	privKey.D = new(big.Int).SetBytes(secretKey)
-	privKey.X, privKey.Y = curve.ScalarBaseMult(secretKey)
+	privKey.D = new(big.Int).SetBytes(secretKey)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+	privKey.X, privKey.Y = curve.ScalarBaseMult(secretKey) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 
 	// Hash the message
 	hash := sha256.Sum256(message)
@@ -117,12 +117,12 @@ func (s *P256Signer) Sign(secretKey []byte, message []byte, auxRand []byte) ([]b
 		return nil, ErrSigningFailed
 	}
 	// Securely zero the big.Int's internal representation
-	if dWords := privKey.D.Bits(); len(dWords) > 0 {
+	if dWords := privKey.D.Bits(); len(dWords) > 0 { //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 		for i := range dWords {
 			dWords[i] = 0
 		}
 	}
-	privKey.D.SetInt64(0)
+	privKey.D.SetInt64(0) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 
 	// Encode as 64 bytes (32 bytes r + 32 bytes s)
 	sig := make([]byte, 64)
@@ -195,7 +195,7 @@ func (s *P256Signer) GenerateKey() ([]byte, []byte, error) {
 
 	// Secret key is D as 32 bytes
 	secretKey := make([]byte, 32)
-	dBytes := privKey.D.Bytes()
+	dBytes := privKey.D.Bytes() //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 	copy(secretKey[32-len(dBytes):], dBytes)
 	secmem.ZeroBytes(dBytes)
 

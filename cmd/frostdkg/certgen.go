@@ -138,13 +138,13 @@ func runCertgen(cmd *cobra.Command, args []string) error {
 		}
 		defer func() {
 			// Zeroize the ECDSA private key D value
-			if ecdsaKey.D != nil {
-				if dWords := ecdsaKey.D.Bits(); len(dWords) > 0 {
+			if ecdsaKey.D != nil { //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+				if dWords := ecdsaKey.D.Bits(); len(dWords) > 0 { //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 					for i := range dWords {
 						dWords[i] = 0
 					}
 				}
-				ecdsaKey.D.SetInt64(0)
+				ecdsaKey.D.SetInt64(0) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
 			}
 		}()
 		privateKey = ecdsaKey
