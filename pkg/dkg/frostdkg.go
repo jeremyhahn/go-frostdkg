@@ -60,7 +60,6 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/binary"
-	"fmt"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
@@ -865,7 +864,7 @@ func FROSTDKGEncParticipantRound1(
 	for i := 0; i < len(hostPubkeys); i++ {
 		for j := i + 1; j < len(hostPubkeys); j++ {
 			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
-				return nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+				return nil, nil, NewFaultyParticipantError(j, "duplicate host public key")
 			}
 		}
 	}
@@ -912,7 +911,7 @@ func FROSTDKGEncParticipantRound1(
 		}
 		if theirPubkey.IsIdentity() {
 			secmem.ZeroBytes(shareBytes)
-			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 
 		// For encryption, we use our own pubnonce for both positions since
@@ -966,7 +965,7 @@ func FROSTDKGEncCoordinatorRound1(
 	for i := 0; i < len(hostPubkeys); i++ {
 		for j := i + 1; j < len(hostPubkeys); j++ {
 			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
-				return nil, nil, nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+				return nil, nil, nil, nil, NewFaultyParticipantError(j, "duplicate host public key")
 			}
 		}
 	}
@@ -1027,6 +1026,16 @@ func FROSTDKGEncParticipantRound2(
 	myIndex := state.Index
 	scalarLen := grp.ScalarLength()
 
+	// The coordinator is untrusted: validate every slice this loop indexes by j
+	// before indexing it, or a short message from the coordinator panics the
+	// participant instead of failing the round.
+	if len(coordMsg.AllPubnonces) != n {
+		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
+	}
+	if len(state.HostPubkeys) != n {
+		return nil, nil, ErrFROSTDKGInvalidParticipantCount
+	}
+
 	// Decrypt shares from each participant
 	receivedShares := make([]group.Scalar, n)
 	for j := 0; j < n; j++ {
@@ -1054,7 +1063,7 @@ func FROSTDKGEncParticipantRound2(
 			return nil, nil, err
 		}
 		if theirPubkey.IsIdentity() {
-			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 		theirPubnonce, err := grp.DeserializeElement(coordMsg.AllPubnonces[j])
 		if err != nil {
@@ -1446,7 +1455,7 @@ func FROSTDKGEncParticipantRound1WithHostKey(
 	for i := 0; i < len(hostPubkeys); i++ {
 		for j := i + 1; j < len(hostPubkeys); j++ {
 			if bytes.Equal(hostPubkeys[i], hostPubkeys[j]) {
-				return nil, nil, fmt.Errorf("duplicate host public key at indices %d and %d", i, j)
+				return nil, nil, NewFaultyParticipantError(j, "duplicate host public key")
 			}
 		}
 	}
@@ -1493,7 +1502,7 @@ func FROSTDKGEncParticipantRound1WithHostKey(
 		}
 		if theirPubkeyElem.IsIdentity() {
 			secmem.ZeroBytes(shareBytes)
-			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 
 		// For encryption, we use our own pubnonce for both positions
@@ -1549,6 +1558,16 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 		return nil, nil, ErrFROSTDKGDecryptionFailed
 	}
 
+	// The coordinator is untrusted: validate every slice this loop indexes by j
+	// before indexing it, or a short message from the coordinator panics the
+	// participant instead of failing the round.
+	if len(coordMsg.AllPubnonces) != n {
+		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
+	}
+	if len(state.HostPubkeys) != n {
+		return nil, nil, ErrFROSTDKGInvalidParticipantCount
+	}
+
 	// Decrypt shares from each participant
 	receivedShares := make([]group.Scalar, n)
 
@@ -1569,10 +1588,10 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 		// Check host public key is not the identity element
 		theirPubkeyElem, err := grp.DeserializeElement(state.HostPubkeys[j])
 		if err != nil {
-			return nil, nil, fmt.Errorf("host public key %d is invalid: %w", j, err)
+			return nil, nil, NewFaultyParticipantError(j, "host public key is invalid: "+err.Error())
 		}
 		if theirPubkeyElem.IsIdentity() {
-			return nil, nil, fmt.Errorf("host public key %d is the identity element", j)
+			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 
 		// Deserialize their public nonce

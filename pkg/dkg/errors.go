@@ -78,6 +78,11 @@ var (
 	// This occurs when the polynomial has no coefficients or invalid structure.
 	ErrInvalidPolynomial = errors.New("dkg: invalid polynomial")
 
+	// ErrEvalAtZero indicates an attempt to evaluate a polynomial at zero.
+	// f(0) is the shared secret, so evaluation there is refused; use
+	// Polynomial.ConstantTerm for deliberate access.
+	ErrEvalAtZero = errors.New("dkg: evaluation at zero would reveal secret - use ConstantTerm()")
+
 	// ErrInvalidSeed indicates that the seed is invalid.
 	ErrInvalidSeed = errors.New("dkg: invalid seed")
 

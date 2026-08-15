@@ -17,8 +17,6 @@
 package dkg
 
 import (
-	"fmt"
-
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 )
 
@@ -107,7 +105,7 @@ func (p *Polynomial) Eval(x group.Scalar) (group.Scalar, error) {
 
 	// Security check: never evaluate at zero - reveals the secret!
 	if x.IsZero() {
-		return nil, fmt.Errorf("polynomial: evaluation at zero would reveal secret - use ConstantTerm()")
+		return nil, ErrEvalAtZero
 	}
 
 	// Start with zero

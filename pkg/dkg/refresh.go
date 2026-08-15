@@ -400,13 +400,13 @@ func RefreshDKGPart2(
 			return nil, nil, NewFaultyParticipantError(int(senderID), "incorrect commitment length")
 		}
 
-		// Verify that the constant term commitment is the identity element.
-		// This ensures the participant is using a zero-constant-term polynomial
-		// which is required for refresh (to not change the group secret).
-		if !fullCommitment[0].IsIdentity() {
-			return nil, nil, NewFaultyParticipantError(int(senderID), "commitment constant term is not identity - refresh requires zero secret")
-		}
-
+		// The sender's constant-term commitment is not transmitted (it is
+		// stripped in RefreshDKGPart1 and reconstructed as the identity here),
+		// so nothing at this point can bind the sender's actual constant term.
+		// A sender that used a non-zero constant term is caught in
+		// RefreshDKGShares, where every received share is checked against this
+		// same reconstructed commitment by VerifySecshare and fails.
+		//
 		// Compute share for this participant: f_i(senderID)
 		share := evaluatePolynomialAtIdentifier(
 			grp,
@@ -772,8 +772,10 @@ func computeProofOfKnowledge(
 	secretCopy := secret.Copy()
 	z := k.Add(secretCopy.Mul(challenge))
 	defer secretCopy.Zeroize()
-	defer z.Zeroize()
 
+	// z is the returned proof and must NOT be zeroized here: group.Scalar.Add
+	// returns a fresh scalar, so z is the very value stored in Signature.Z.
+	// Ownership passes to the caller.
 	return &dkg.Signature{R: R, Z: z}, nil
 }
 
