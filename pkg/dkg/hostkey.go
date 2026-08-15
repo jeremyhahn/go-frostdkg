@@ -240,8 +240,20 @@ func (k *SoftwareHostKey) Zeroize() {
 	k.scalar = nil
 }
 
+// zeroized reports whether Zeroize has cleared this key's secret material.
+//
+// Zeroize nils both secretKey and scalar, and the private-key operations
+// dereference them, so an operation attempted after zeroization must be
+// refused here rather than panicking somewhere inside the group arithmetic.
+func (k *SoftwareHostKey) zeroized() bool {
+	return k == nil || k.scalar == nil || k.secretKey == nil
+}
+
 // ECDH computes a Diffie-Hellman shared secret.
 func (k *SoftwareHostKey) ECDH(theirPubkey []byte) ([]byte, error) {
+	if k.zeroized() {
+		return nil, ErrHostKeyZeroized
+	}
 	grp := k.cs.Group()
 
 	// Deserialize their public key
@@ -264,6 +276,9 @@ func (k *SoftwareHostKey) ECDH(theirPubkey []byte) ([]byte, error) {
 
 // Sign creates a signature on the message.
 func (k *SoftwareHostKey) Sign(message []byte) ([]byte, error) {
+	if k.zeroized() {
+		return nil, ErrHostKeyZeroized
+	}
 	grp := k.cs.Group()
 
 	switch k.cs.ID() {

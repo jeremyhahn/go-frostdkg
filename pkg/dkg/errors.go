@@ -171,6 +171,10 @@ var (
 
 	// ErrHostKeySignFailed indicates that signing failed.
 	ErrHostKeySignFailed = errors.New("hostkey: signing failed")
+
+	// ErrHostKeyZeroized indicates that the key's secret material has been
+	// zeroized, so it can no longer perform private-key operations.
+	ErrHostKeyZeroized = errors.New("hostkey: key has been zeroized")
 )
 
 // InvalidSignatureError represents an error where a specific participant's
