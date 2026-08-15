@@ -18,6 +18,7 @@ package grpc
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
 	"net"
 	"os"
@@ -81,7 +82,11 @@ func NewUnixServer(cfg *transport.Config, sessionCfg *transport.SessionConfig) (
 	// Generate session ID if not provided
 	sessionID := sessionCfg.SessionID
 	if sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		randBytes := make([]byte, 16)
+		if _, err := crypto_rand.Read(randBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate session ID: %w", err)
+		}
+		sessionID = fmt.Sprintf("session-%x", randBytes)
 	}
 
 	// Create serializer
@@ -113,14 +118,25 @@ func (s *UnixServer) Start(ctx context.Context) error {
 		return fmt.Errorf("server already running")
 	}
 
-	// Remove existing socket file if present
-	if err := os.RemoveAll(s.config.Address); err != nil {
+	// Remove existing socket file if present. Non-recursive: the configured
+	// address is a socket path, and a misconfigured one pointing at a
+	// directory must not take the directory with it.
+	if err := os.Remove(s.config.Address); err != nil && !os.IsNotExist(err) {
 		return transport.NewConnectionError(s.config.Address, err)
 	}
 
 	// Create Unix listener
 	listener, err := net.Listen("unix", s.config.Address)
 	if err != nil {
+		return transport.NewConnectionError(s.config.Address, err)
+	}
+
+	// net.Listen creates the socket with 0777 &^ umask, which on a typical
+	// umask leaves it connectable by every local account. There is no peer
+	// authentication on this transport, so the file mode is the only access
+	// control it has.
+	if err := os.Chmod(s.config.Address, 0o600); err != nil {
+		_ = listener.Close()
 		return transport.NewConnectionError(s.config.Address, err)
 	}
 	s.listener = listener
@@ -148,11 +164,11 @@ func (s *UnixServer) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the Unix server.
 func (s *UnixServer) Stop(ctx context.Context) error {
-	if !s.running.Load() {
+	// CompareAndSwap, not Load-then-Store: two concurrent Stop calls both pass
+	// a plain check and the second close panics on an already-closed channel.
+	if !s.running.CompareAndSwap(true, false) {
 		return nil
 	}
-
-	s.running.Store(false)
 	close(s.shutdownChan)
 
 	// Graceful shutdown with timeout
@@ -249,6 +265,11 @@ func (s *UnixServer) ParticipantStream(stream proto.DKGCoordinator_ParticipantSt
 		// Handle join message to register participant
 		if msg.Type == proto.MessageType_MSG_TYPE_JOIN && !registered {
 			participantIdx = int(msg.SenderIdx)
+
+			// Validate participant index bounds
+			if participantIdx < 0 || participantIdx >= s.sessionConfig.NumParticipants {
+				return fmt.Errorf("participant index %d out of range [0, %d)", participantIdx, s.sessionConfig.NumParticipants)
+			}
 
 			// Register participant
 			s.participantsMu.Lock()

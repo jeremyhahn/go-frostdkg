@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -81,6 +82,23 @@ type MCPSession struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	mu               sync.RWMutex
+}
+
+// requireJoinedParticipant rejects a submission whose participant index was
+// never registered by dkg_join_session.
+//
+// The index arrives from the wire and is later used to index aggregation
+// slices sized at Config.NumParticipants, so an unregistered or out-of-range
+// value must be refused before it reaches them. Registration assigns indices
+// densely from zero and caps them at NumParticipants, so membership here also
+// establishes that the index is in range.
+//
+// The caller must hold s.mu.
+func (s *MCPSession) requireJoinedParticipant(idx int) error {
+	if _, ok := s.Participants[idx]; !ok {
+		return NewToolError(int(ErrorCodeInvalidParams), "unknown participant index")
+	}
+	return nil
 }
 
 // MCPParticipant represents a participant in an MCP session.
@@ -149,6 +167,10 @@ func (s *MCPServer) Start(ctx context.Context) error {
 		return fmt.Errorf("server already started")
 	}
 
+	// Stop closes stopChan, so a restart needs a fresh one or the request
+	// loops see a closed channel and exit immediately.
+	s.stopChan = make(chan struct{})
+
 	// Create initial session
 	session := &MCPSession{
 		SessionID:        s.sessionID,
@@ -179,7 +201,9 @@ func (s *MCPServer) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the server.
 func (s *MCPServer) Stop(ctx context.Context) error {
-	if !s.started.Load() {
+	// CompareAndSwap, not Load: two concurrent Stop calls both pass a plain
+	// check and the second close panics on an already-closed channel.
+	if !s.started.CompareAndSwap(true, false) {
 		return fmt.Errorf("server not started")
 	}
 
@@ -194,7 +218,6 @@ func (s *MCPServer) Stop(ctx context.Context) error {
 	// Wait for goroutines to finish
 	s.wg.Wait()
 
-	s.started.Store(false)
 	return nil
 }
 
@@ -248,12 +271,14 @@ func (s *MCPServer) WaitForParticipants(ctx context.Context, n int) error {
 
 // startStdio starts the stdio JSON-RPC handler.
 func (s *MCPServer) startStdio(ctx context.Context) error {
-	// Default to stdin/stdout if not set
+	// Default to stdin/stdout if not set. io.Reader(nil) is a nil interface,
+	// not an empty reader, so reading from it panics on the request goroutine
+	// and takes the process down.
 	if s.reader == nil {
-		s.reader = bufio.NewReader(io.Reader(nil))
+		s.reader = bufio.NewReader(os.Stdin)
 	}
 	if s.writer == nil {
-		s.writer = io.Writer(nil)
+		s.writer = os.Stdout
 	}
 
 	s.wg.Add(1)
@@ -581,6 +606,10 @@ func (s *MCPServer) handleSubmitRound1(ctx context.Context, params json.RawMessa
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
+	if err := session.requireJoinedParticipant(p.ParticipantIdx); err != nil {
+		return nil, err
+	}
+
 	if session.State != StateRound1 {
 		return nil, NewToolError(int(ErrorCodeInvalidState),
 			fmt.Sprintf("invalid state for round1: %s", session.State))
@@ -667,6 +696,10 @@ func (s *MCPServer) handleSubmitRound2(ctx context.Context, params json.RawMessa
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
+	if err := session.requireJoinedParticipant(p.ParticipantIdx); err != nil {
+		return nil, err
+	}
+
 	if session.State != StateRound2 {
 		return nil, NewToolError(int(ErrorCodeInvalidState),
 			fmt.Sprintf("invalid state for round2: %s", session.State))
@@ -715,6 +748,10 @@ func (s *MCPServer) handleSubmitCertEq(ctx context.Context, params json.RawMessa
 
 	session.mu.Lock()
 	defer session.mu.Unlock()
+
+	if err := session.requireJoinedParticipant(p.ParticipantIdx); err != nil {
+		return nil, err
+	}
 
 	if session.State != StateCertEq {
 		return nil, NewToolError(int(ErrorCodeInvalidState),

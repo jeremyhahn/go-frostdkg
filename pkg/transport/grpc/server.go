@@ -188,11 +188,11 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the coordinator.
 func (s *GRPCServer) Stop(ctx context.Context) error {
-	if !s.running.Load() {
+	// CompareAndSwap, not Load-then-Store: two concurrent Stop calls both pass
+	// a plain check and the second close panics on an already-closed channel.
+	if !s.running.CompareAndSwap(true, false) {
 		return nil
 	}
-
-	s.running.Store(false)
 	close(s.shutdownChan)
 
 	// Graceful shutdown with timeout

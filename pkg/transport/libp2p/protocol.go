@@ -17,7 +17,6 @@
 package libp2p
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -83,12 +82,17 @@ func WriteMessage(stream network.Stream, data []byte) error {
 
 // ReadMessage reads a length-prefixed message from a stream.
 // Format: [4-byte length][message data]
+//
+// Reads come straight off the stream rather than through a bufio.Reader.
+// Callers invoke this in a loop on a long-lived stream, and a reader created
+// per call would buffer whatever followed the current message and then discard
+// it when it went out of scope, losing messages and desynchronising the
+// framing. Every read here is for an exact byte count, so buffering buys
+// nothing.
 func ReadMessage(stream network.Stream) ([]byte, error) {
-	reader := bufio.NewReader(stream)
-
 	// Read 4-byte length prefix
 	lengthBuf := make([]byte, 4)
-	if _, err := io.ReadFull(reader, lengthBuf); err != nil {
+	if _, err := io.ReadFull(stream, lengthBuf); err != nil {
 		if err == io.EOF {
 			return nil, io.EOF
 		}
@@ -106,7 +110,7 @@ func ReadMessage(stream network.Stream) ([]byte, error) {
 
 	// Read message data
 	data := make([]byte, length)
-	if _, err := io.ReadFull(reader, data); err != nil {
+	if _, err := io.ReadFull(stream, data); err != nil {
 		return nil, fmt.Errorf("failed to read message data: %w", err)
 	}
 
