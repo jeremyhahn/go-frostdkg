@@ -63,8 +63,22 @@ return; pre-1.0, both land in MINOR.
   `RefreshDKGShares`. A control that cannot fail reads as coverage it does not
   provide.
 
+- The libp2p host is released when `Stop` is called before `Start`.
+- Integration tests wait for tcp/9000 rather than sleeping, give the QUIC
+  clients a CA they can actually verify, and inject CLI write failures through
+  filesystem shape rather than permission bits — CI job containers run as root,
+  which bypasses mode checks and made those negative tests vacuous.
+
 ### Security
 
+- Adopted the `go 1.26.6` toolchain (stdlib fixes for GO-2026-6218 and
+  GO-2026-6090) and `x/net v0.57.0` for CVE-2026-46600.
+- Adopted `ci-template v1` and completed the mandatory security-analysis suite
+  (golangci-lint, gosec, govulncheck, trivy fs, trivy image), and restored the
+  Integration Tests and Docker Build & Scan jobs, which had been dark.
+- Dropped the workflow-level `GOSUMDB=off` override, which had disabled
+  checksum verification for every third-party dependency, not just the
+  first-party modules it was meant to exempt.
 - `make trivy`, `make trivy-image` and `make vulncheck` now fail closed. The
   first two printed "skipping" and returned 0 when the scanner was absent, so
   `make security` reported success having scanned nothing; `vulncheck` ran
@@ -79,22 +93,19 @@ return; pre-1.0, both land in MINOR.
 ## [0.1.1-alpha] - 2026-08-13
 
 Cut during the dependency-resolution cutover; this entry is written
-retrospectively, as the release went out without one.
+retrospectively, as the release went out without one. Its contents are the
+commits reachable from the `v0.1.1-alpha` tag only — everything else from that
+week's work landed afterwards and appears under 0.2.0-alpha above.
 
 ### Changed
 
 - Cross-repo dependencies resolve as tagged modules fetched from Gitea rather
   than through a shared `go.work`; `go-frost` is pinned at `v0.1.7-alpha`.
-- Adopted the `go 1.26.6` toolchain (stdlib fixes for GO-2026-6218 and
-  GO-2026-6090) and `x/net v0.57.0` for CVE-2026-46600.
-- Adopted `ci-template v1`, completing the mandatory security-analysis suite,
-  and restored the Integration Tests and Docker Build & Scan jobs.
 
 ### Fixed
 
 - `Polynomial.Eval` returns an error instead of panicking when asked to
   evaluate at zero — **BREAKING**: its signature gained an `error` return.
-- The libp2p host is released when stopped before it was started.
 
 ## [0.1.0-alpha] - 2025-12-27
 
