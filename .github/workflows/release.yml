@@ -161,7 +161,19 @@ jobs:
             echo "host=$(echo '${{ github.server_url }}' | sed -E 's#^https?://##')" >> $GITHUB_OUTPUT
           fi
 
+      # continue-on-error for the same reason the push below has it, and it has
+      # to be here too or the guard never gets a chance to work: Gitea's
+      # registry is plain HTTP on :3001, and the docker daemon refuses it with
+      # "server gave HTTP response to HTTPS client" unless every daemon
+      # involved is configured as an insecure registry
+      # (infra/gitea/docs/lessons.md). Login runs BEFORE the build, so an
+      # unguarded failure here killed the whole job before the image was ever
+      # built or scanned — which is what happened to the v0.2.0-alpha release.
+      # Losing the image is annoying; losing the release over it would be
+      # worse. The Trivy gate below is unaffected and stays blocking: it scans
+      # a locally built image and needs no registry.
       - name: Log in to the registry
+        continue-on-error: true
         uses: docker/login-action@v3
         with:
           registry: ${{ steps.registry.outputs.host }}
