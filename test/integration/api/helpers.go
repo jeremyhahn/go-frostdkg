@@ -27,11 +27,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
@@ -365,5 +367,32 @@ func WaitWithTimeout(ctx context.Context, timeout time.Duration, condition func(
 		case <-ticker.C:
 			// Continue checking
 		}
+	}
+}
+
+// RequireDKGNotImplemented asserts that a DKG run over a NETWORK transport
+// failed closed.
+//
+// That is the contract as of v0.3.0-alpha: quic, grpc, grpc/unix, http, libp2p
+// and mcp carry the protocol messages but do not drive the ceremony, so
+// Participant.RunDKG returns transport.ErrDKGNotImplemented and no key
+// material (software task #61 tracks wiring them to the real pkg/dkg driver).
+//
+// Everything these suites exercise BEFORE the ceremony — listener setup,
+// connect, join, session-info exchange, relay — is real and must still
+// succeed; this helper is only about what RunDKG hands back.
+//
+// The in-memory transport is exempt and keeps asserting a successful result.
+func RequireDKGNotImplemented(t *testing.T, results []*transport.DKGResult, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("expected the DKG to fail closed with transport.ErrDKGNotImplemented, got %d results and a nil error", len(results))
+	}
+	if !errors.Is(err, transport.ErrDKGNotImplemented) {
+		t.Fatalf("expected transport.ErrDKGNotImplemented, got: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected no results alongside the error, got %d", len(results))
 	}
 }

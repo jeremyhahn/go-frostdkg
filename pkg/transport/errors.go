@@ -169,6 +169,21 @@ var (
 
 	// ErrInvalidDKGResult indicates invalid DKG result received.
 	ErrInvalidDKGResult = errors.New("transport: invalid DKG result")
+
+	// ErrDKGNotImplemented indicates the transport carries DKG protocol
+	// messages but does not yet run the ceremony, so it cannot produce key
+	// material.
+	//
+	// Every network transport (quic, grpc, unix, http, libp2p, mcp) returns
+	// this from RunDKG. They previously returned a DKGResult filled with a
+	// fixed pattern derived from the participant index and a nil error, which
+	// a caller could not distinguish from a real ceremony. Failing closed is
+	// the only safe behaviour until the transports are wired to the real
+	// pkg/dkg driver.
+	//
+	// The in-memory transport is exempt: it is a test double, and its
+	// deterministic result is the point.
+	ErrDKGNotImplemented = errors.New("transport: DKG is not implemented for this transport")
 )
 
 // ConnectionError wraps connection errors with additional context.

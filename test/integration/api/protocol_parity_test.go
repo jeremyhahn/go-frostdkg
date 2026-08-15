@@ -177,19 +177,20 @@ func TestProtocolParity_2of3_Threshold(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name    string
-		factory TransportFactory
+		name         string
+		factory      TransportFactory
+		runsCeremony bool
 	}{
-		{"Memory", createMemoryTransport},
-		{"gRPC", createGRPCTransport},
-		{"HTTP", createHTTPTransport},
-		{"QUIC", createQUICTransport},
-		{"Unix", createUnixTransport},
+		{"Memory", createMemoryTransport, true},
+		{"gRPC", createGRPCTransport, false},
+		{"HTTP", createHTTPTransport, false},
+		{"QUIC", createQUICTransport, false},
+		{"Unix", createUnixTransport, false},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runDKGTest(t, threshold, numParticipants, ciphersuite, tc.factory)
+			runDKGTest(t, threshold, numParticipants, ciphersuite, tc.factory, tc.runsCeremony)
 		})
 	}
 }
@@ -203,19 +204,20 @@ func TestProtocolParity_3of5_Threshold(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name    string
-		factory TransportFactory
+		name         string
+		factory      TransportFactory
+		runsCeremony bool
 	}{
-		{"Memory", createMemoryTransport},
-		{"gRPC", createGRPCTransport},
-		{"HTTP", createHTTPTransport},
-		{"QUIC", createQUICTransport},
-		{"Unix", createUnixTransport},
+		{"Memory", createMemoryTransport, true},
+		{"gRPC", createGRPCTransport, false},
+		{"HTTP", createHTTPTransport, false},
+		{"QUIC", createQUICTransport, false},
+		{"Unix", createUnixTransport, false},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runDKGTest(t, threshold, numParticipants, ciphersuite, tc.factory)
+			runDKGTest(t, threshold, numParticipants, ciphersuite, tc.factory, tc.runsCeremony)
 		})
 	}
 }
@@ -287,12 +289,24 @@ func TestProtocolParity_ErrorCases(t *testing.T) {
 }
 
 // runDKGTest is a helper that runs a complete DKG test for any transport.
+//
+// runsCeremony distinguishes the in-memory transport, which really does
+// produce a DKG result, from the network transports, which carry the protocol
+// messages but do not drive the ceremony and fail closed with
+// transport.ErrDKGNotImplemented (software task #61).
+//
+// Note what this table used to assert: every transport returned the SAME
+// fabricated SecretShare pattern, so CompareResultsAction found them
+// "equivalent" and the parity test passed without any transport having run a
+// DKG. The setup, connect, join and relay legs below are real and still run
+// for every transport; only the ceremony assertion differs.
 func runDKGTest(
 	t *testing.T,
 	threshold int,
 	numParticipants int,
 	ciphersuite string,
 	factory TransportFactory,
+	runsCeremony bool,
 ) {
 	t.Helper()
 
@@ -348,6 +362,10 @@ func runDKGTest(
 	// Run DKG for all participants concurrently
 	dkgRunner := NewConcurrentDKGRunner(2 * time.Minute)
 	results, err := dkgRunner.RunParticipants(ctx, participants, params)
+	if !runsCeremony {
+		RequireDKGNotImplemented(t, results, err)
+		return
+	}
 	if err != nil {
 		t.Fatalf("DKG execution failed: %v", err)
 	}

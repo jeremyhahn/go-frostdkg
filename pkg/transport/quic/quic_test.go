@@ -21,6 +21,7 @@ package quic
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -513,44 +514,33 @@ func TestQUICRunDKG(t *testing.T) {
 
 			params := createTestDKGParams(t, idx, numParticipants, threshold)
 			result, err := client.RunDKG(ctx, params)
-			if err != nil {
-				errChan <- fmt.Errorf("participant %d RunDKG failed: %v", idx, err)
+
+			// QUIC carries the DKG messages but does not run the ceremony, so
+			// RunDKG fails closed (software task #61). Reaching this line at
+			// all proves the connect, join and session-info legs worked; what
+			// must NOT come back is key material. This test previously
+			// asserted only the LENGTHS of SecretShare/ThresholdPubkey, which
+			// the fabricated byte(0x42+idx) fill satisfied.
+			if !errors.Is(err, transport.ErrDKGNotImplemented) {
+				errChan <- fmt.Errorf("participant %d: expected ErrDKGNotImplemented, got err=%v result=%+v", idx, err, result)
 				return
 			}
-
-			results[idx] = result
+			if result != nil {
+				errChan <- fmt.Errorf("participant %d: expected nil result alongside the error, got %+v", idx, result)
+			}
 		}(i)
 	}
 
 	wg.Wait()
 	close(errChan)
 
-	// Check for errors
 	for err := range errChan {
 		t.Error(err)
 	}
 
-	// Verify results
 	for i, result := range results {
-		if result == nil {
-			t.Errorf("Participant %d: nil result", i)
-			continue
-		}
-
-		if result.SessionID != "test-session-dkg" {
-			t.Errorf("Participant %d: expected session ID 'test-session-dkg', got %s", i, result.SessionID)
-		}
-
-		if len(result.SecretShare) != transport.SecretKeySize {
-			t.Errorf("Participant %d: invalid secret share length", i)
-		}
-
-		if len(result.ThresholdPubkey) != transport.PublicKeySize {
-			t.Errorf("Participant %d: invalid threshold pubkey length", i)
-		}
-
-		if len(result.PublicShares) != numParticipants {
-			t.Errorf("Participant %d: expected %d public shares, got %d", i, numParticipants, len(result.PublicShares))
+		if result != nil {
+			t.Errorf("Participant %d: no result should have been recorded, got %+v", i, result)
 		}
 	}
 }

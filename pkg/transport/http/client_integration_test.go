@@ -21,6 +21,8 @@ package http
 import (
 	"context"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -123,12 +125,19 @@ func TestFullDKGFlow(t *testing.T) {
 			}
 
 			result, err := client.RunDKG(ctx, params)
-			if err != nil {
-				errCh <- err
+
+			// HTTP does not run the ceremony; RunDKG fails closed (software
+			// task #61). Every participant must get that error and no result.
+			// Reaching this point proves the per-participant connect and join
+			// legs, which is what this test still covers.
+			if !errors.Is(err, transport.ErrDKGNotImplemented) {
+				errCh <- fmt.Errorf("participant %d: expected ErrDKGNotImplemented, got err=%v result=%+v", idx, err, result)
 				return
 			}
-
-			resultCh <- result
+			if result != nil {
+				errCh <- fmt.Errorf("participant %d: expected nil result alongside the error, got %+v", idx, result)
+				return
+			}
 		}(i)
 	}
 
@@ -136,33 +145,17 @@ func TestFullDKGFlow(t *testing.T) {
 	close(errCh)
 	close(resultCh)
 
-	// Check for errors
 	for err := range errCh {
 		t.Errorf("participant error: %v", err)
 	}
 
-	// Collect results
 	results := make([]*transport.DKGResult, 0, numParticipants)
 	for result := range resultCh {
 		results = append(results, result)
 	}
 
-	if len(results) != numParticipants {
-		t.Errorf("unexpected number of results: got %d, want %d", len(results), numParticipants)
-	}
-
-	// Verify all results have the same session ID
-	if len(results) > 0 {
-		sessionID := results[0].SessionID
-		for i, result := range results {
-			if result.SessionID != sessionID {
-				t.Errorf("participant %d: session ID mismatch: got %s, want %s", i, result.SessionID, sessionID)
-			}
-
-			if len(result.RecoveryData) == 0 {
-				t.Errorf("participant %d: empty recovery data", i)
-			}
-		}
+	if len(results) != 0 {
+		t.Errorf("expected no DKG results from a transport that does not run the ceremony, got %d", len(results))
 	}
 }
 

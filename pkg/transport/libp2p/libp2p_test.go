@@ -20,6 +20,8 @@ package libp2p
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -1092,7 +1094,7 @@ func TestParticipantRunDKG(t *testing.T) {
 		}
 	})
 
-	t.Run("execute DKG successfully", func(t *testing.T) {
+	t.Run("connect and join, then fail closed on the ceremony", func(t *testing.T) {
 		sessionID := "test-session-dkg-exec"
 		config := &transport.SessionConfig{
 			Threshold:       1,
@@ -1131,26 +1133,17 @@ func TestParticipantRunDKG(t *testing.T) {
 			Random:         make([]byte, 32),
 		}
 
+		// The coordinator start, participant connect and join above are real
+		// and must all have succeeded to reach this line. libp2p does not run
+		// the ceremony, so RunDKG fails closed (software task #61). The old
+		// assertions checked only the SIZES of SecretShare/ThresholdPubkey,
+		// which the fabricated byte(0x42+idx) fill satisfied.
 		result, err := participant.RunDKG(ctx, params)
-		if err != nil {
-			t.Fatalf("failed to run DKG: %v", err)
+		if !errors.Is(err, transport.ErrDKGNotImplemented) {
+			t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", err, result)
 		}
-
-		// Verify result
-		if result == nil {
-			t.Fatal("result should not be nil")
-		}
-
-		if len(result.SecretShare) != transport.SecretKeySize {
-			t.Errorf("secret share size mismatch: got %d, want %d", len(result.SecretShare), transport.SecretKeySize)
-		}
-
-		if len(result.ThresholdPubkey) != transport.PublicKeySize {
-			t.Errorf("threshold pubkey size mismatch: got %d, want %d", len(result.ThresholdPubkey), transport.PublicKeySize)
-		}
-
-		if len(result.PublicShares) != 2 {
-			t.Errorf("public shares count mismatch: got %d, want 2", len(result.PublicShares))
+		if result != nil {
+			t.Fatalf("expected nil result alongside the error, got %+v", result)
 		}
 	})
 }
@@ -2282,13 +2275,9 @@ func TestFullDKGMessageFlow(t *testing.T) {
 		t.Fatalf("failed to wait for participants: %v", err)
 	}
 
-	// Run DKG from each participant
-	results := make([]*transport.DKGResult, numParticipants)
-	errors := make(chan error, numParticipants)
-	resultsChan := make(chan struct {
-		idx    int
-		result *transport.DKGResult
-	}, numParticipants)
+	// Run DKG from each participant. No results channel: this transport
+	// returns no key material, so the only thing to collect is the error.
+	errCh := make(chan error, numParticipants)
 
 	for i := 0; i < numParticipants; i++ {
 		go func(idx int) {
@@ -2305,52 +2294,34 @@ func TestFullDKGMessageFlow(t *testing.T) {
 				params.HostPubkeys[j] = make([]byte, transport.PublicKeySize)
 			}
 
+			// The message flow up to the ceremony is what this test covers,
+			// and it must still work. libp2p does not run the ceremony, so
+			// every participant fails closed (software task #61).
 			result, err := participants[idx].RunDKG(ctx, params)
-			if err != nil {
-				errors <- err
+			if result != nil {
+				errCh <- fmt.Errorf("participant %d: expected nil result alongside the error, got %+v", idx, result)
 				return
 			}
-
-			resultsChan <- struct {
-				idx    int
-				result *transport.DKGResult
-			}{idx, result}
+			errCh <- err
 		}(i)
 	}
 
-	// Collect results
+	// Every participant must report ErrDKGNotImplemented. The old version of
+	// this test collected results and asserted only the SIZES of
+	// SecretShare/ThresholdPubkey, which the fabricated byte(0x42+idx) fill
+	// satisfied for every transport.
 	for i := 0; i < numParticipants; i++ {
 		select {
-		case res := <-resultsChan:
-			results[res.idx] = res.result
-		case err := <-errors:
-			t.Fatalf("DKG failed for a participant: %v", err)
+		case err := <-errCh:
+			if !errors.Is(err, transport.ErrDKGNotImplemented) {
+				t.Fatalf("expected ErrDKGNotImplemented from every participant, got: %v", err)
+			}
 		case <-time.After(10 * time.Second):
 			t.Fatal("timeout waiting for DKG results")
 		}
 	}
 
-	// Verify all results
-	for i, result := range results {
-		if result == nil {
-			t.Errorf("participant %d: result is nil", i)
-			continue
-		}
-
-		if len(result.SecretShare) != transport.SecretKeySize {
-			t.Errorf("participant %d: invalid secret share size", i)
-		}
-
-		if len(result.ThresholdPubkey) != transport.PublicKeySize {
-			t.Errorf("participant %d: invalid threshold pubkey size", i)
-		}
-
-		if len(result.PublicShares) != numParticipants {
-			t.Errorf("participant %d: invalid public shares count", i)
-		}
-	}
-
-	t.Log("Full DKG message flow completed successfully")
+	t.Log("Full DKG message flow reached the ceremony and failed closed, as expected")
 }
 
 // TestWaitForSessionInfoTimeout tests session info timeout.

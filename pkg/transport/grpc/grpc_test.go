@@ -19,6 +19,7 @@ package grpc
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1373,23 +1374,21 @@ func TestGRPCClientRunDKG(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for result or timeout
+	// Wait for result or timeout.
+	//
+	// The connect/join/session-info exchange above is real and must still
+	// succeed; what must NOT happen is a DKGResult coming back. This transport
+	// does not run the ceremony, so RunDKG fails closed with
+	// ErrDKGNotImplemented. It previously returned a result whose SecretShare
+	// was a fixed pattern derived from the participant index, and this test
+	// asserted only its LENGTH — which that fabricated value satisfied.
 	select {
 	case <-done:
-		if dkgErr != nil {
-			t.Fatalf("RunDKG failed: %v", dkgErr)
+		if !errors.Is(dkgErr, transport.ErrDKGNotImplemented) {
+			t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", dkgErr, result)
 		}
-		if result == nil {
-			t.Fatal("expected non-nil result")
-		}
-		if result.SessionID == "" {
-			t.Error("expected non-empty session ID")
-		}
-		if len(result.SecretShare) != transport.SecretKeySize {
-			t.Errorf("expected secret share size %d, got %d", transport.SecretKeySize, len(result.SecretShare))
-		}
-		if len(result.ThresholdPubkey) != transport.PublicKeySize {
-			t.Errorf("expected threshold pubkey size %d, got %d", transport.PublicKeySize, len(result.ThresholdPubkey))
+		if result != nil {
+			t.Fatalf("expected nil result alongside the error, got %+v", result)
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("RunDKG timed out")
@@ -1480,20 +1479,17 @@ func TestUnixClientRunDKG(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for result or timeout
+	// Wait for result or timeout. As with the gRPC case: the connect and join
+	// legs are real and must still work, but the Unix transport does not run
+	// the ceremony, so RunDKG fails closed rather than returning fabricated
+	// key material.
 	select {
 	case <-done:
-		if dkgErr != nil {
-			t.Fatalf("RunDKG failed: %v", dkgErr)
+		if !errors.Is(dkgErr, transport.ErrDKGNotImplemented) {
+			t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", dkgErr, result)
 		}
-		if result == nil {
-			t.Fatal("expected non-nil result")
-		}
-		if result.SessionID == "" {
-			t.Error("expected non-empty session ID")
-		}
-		if len(result.SecretShare) != transport.SecretKeySize {
-			t.Errorf("expected secret share size %d, got %d", transport.SecretKeySize, len(result.SecretShare))
+		if result != nil {
+			t.Fatalf("expected nil result alongside the error, got %+v", result)
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("RunDKG timed out")

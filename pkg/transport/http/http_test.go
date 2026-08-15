@@ -1240,19 +1240,17 @@ func TestRunDKG(t *testing.T) {
 	}
 	defer func() { _ = client1.Disconnect() }()
 
+	// HTTP carries the DKG messages but does not run the ceremony, so RunDKG
+	// fails closed (software task #61). Getting here proves connect and join
+	// worked; what must not come back is key material. The old assertion
+	// checked only the LENGTH of SecretShare, which the fabricated
+	// byte(0x42+idx) fill satisfied.
 	result1, err := client1.RunDKG(ctx, params1)
-	if err != nil {
-		t.Fatalf("failed to run DKG for client 1: %v", err)
+	if !errors.Is(err, transport.ErrDKGNotImplemented) {
+		t.Fatalf("client 1: expected ErrDKGNotImplemented, got err=%v result=%+v", err, result1)
 	}
-
-	if result1 == nil {
-		t.Fatal("expected DKG result but got nil")
-	}
-	if result1.SessionID != "dkg-test-session" {
-		t.Errorf("unexpected session ID: got %s, want %s", result1.SessionID, "dkg-test-session")
-	}
-	if len(result1.SecretShare) != transport.SecretKeySize {
-		t.Errorf("unexpected secret share size: got %d, want %d", len(result1.SecretShare), transport.SecretKeySize)
+	if result1 != nil {
+		t.Fatalf("client 1: expected nil result alongside the error, got %+v", result1)
 	}
 
 	// Test participant 2
@@ -1267,12 +1265,11 @@ func TestRunDKG(t *testing.T) {
 	defer func() { _ = client2.Disconnect() }()
 
 	result2, err := client2.RunDKG(ctx, params2)
-	if err != nil {
-		t.Fatalf("failed to run DKG for client 2: %v", err)
+	if !errors.Is(err, transport.ErrDKGNotImplemented) {
+		t.Fatalf("client 2: expected ErrDKGNotImplemented, got err=%v result=%+v", err, result2)
 	}
-
-	if result2 == nil {
-		t.Fatal("expected DKG result but got nil")
+	if result2 != nil {
+		t.Fatalf("client 2: expected nil result alongside the error, got %+v", result2)
 	}
 
 	// Test RunDKG without connection

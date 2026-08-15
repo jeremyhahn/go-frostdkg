@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -634,16 +635,16 @@ func TestMCPClientRunDKGFlow(t *testing.T) {
 		Random:         make([]byte, 32),
 	}
 
+	// The join leg above is real and must still succeed; the ceremony is not
+	// implemented on this transport, so RunDKG fails closed. This test used to
+	// assert only that SecretShare was 32 bytes long, which the fabricated
+	// byte(0x42+idx) fill satisfied.
 	result, err := client.RunDKG(ctx, params)
-	if err != nil {
-		t.Fatalf("RunDKG failed: %v", err)
+	if !errors.Is(err, transport.ErrDKGNotImplemented) {
+		t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", err, result)
 	}
-
-	if result == nil {
-		t.Fatal("expected result, got nil")
-	}
-	if len(result.SecretShare) != 32 {
-		t.Errorf("expected SecretShare length 32, got %d", len(result.SecretShare))
+	if result != nil {
+		t.Fatalf("expected nil result alongside the error, got %+v", result)
 	}
 }
 

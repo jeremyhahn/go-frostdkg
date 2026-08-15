@@ -167,6 +167,11 @@ func (c *HTTPClient) Disconnect() error {
 }
 
 // RunDKG executes the FROST DKG protocol
+//
+// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
+// join and session-info exchange happen as written, then this returns
+// transport.ErrDKGNotImplemented rather than key material. See package
+// transport and software task #61.
 func (c *HTTPClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	c.mu.RLock()
 	if !c.connected {
@@ -199,47 +204,17 @@ func (c *HTTPClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*
 	return result, nil
 }
 
-// executeDKG executes the DKG protocol rounds.
+// executeDKG would run the DKG protocol rounds. It does not: this transport
+// carries the protocol messages but never drives the ceremony, so it has no
+// key material to return.
+//
+// It previously built a DKGResult from a fixed pattern derived from the
+// participant index and returned it with a nil error, which no caller could
+// tell apart from a real ceremony. Failing closed is the only safe behaviour
+// until the transport is wired to the real pkg/dkg driver (tracked as
+// software task #61).
 func (c *HTTPClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
-	// This is a simplified implementation - the actual DKG logic would go here
-	// For now, we'll return placeholder result with unique data per participant
-
-	// Placeholder result with unique data per participant
-	result := &transport.DKGResult{
-		SessionID:       c.sessionID,
-		SecretShare:     make([]byte, transport.SecretKeySize),
-		ThresholdPubkey: make([]byte, transport.PublicKeySize),
-		PublicShares:    make([][]byte, sessionInfo.NumParticipants),
-		RecoveryData:    make([]byte, 64),
-	}
-
-	// Fill with unique test data per participant
-	result.SecretShare[0] = byte(params.ParticipantIdx + 1)
-	for i := 1; i < transport.SecretKeySize; i++ {
-		result.SecretShare[i] = byte(0x42 + params.ParticipantIdx)
-	}
-
-	// Threshold pubkey is the same for all participants
-	for i := range result.ThresholdPubkey {
-		result.ThresholdPubkey[i] = byte(0xAB)
-	}
-
-	// Public shares differ by participant index
-	for i := range result.PublicShares {
-		result.PublicShares[i] = make([]byte, transport.PublicKeySize)
-		result.PublicShares[i][0] = byte(i + 1)
-		for j := 1; j < transport.PublicKeySize; j++ {
-			result.PublicShares[i][j] = byte(0xCD)
-		}
-	}
-
-	// Recovery data is the same for all participants in real DKG
-	// Use a deterministic value based on session
-	for i := range result.RecoveryData {
-		result.RecoveryData[i] = byte(0xEE)
-	}
-
-	return result, nil
+	return nil, transport.ErrDKGNotImplemented
 }
 
 // validateParams validates DKG parameters
@@ -307,7 +282,12 @@ func (c *HTTPClient) joinSession(ctx context.Context, params *transport.DKGParam
 
 // executeRound1 executes Round1 of the DKG protocol.
 //
-//nolint:unused // Used by integration tests with build tag
+// real, working protocol plumbing exercised end to end by http_test.go against a
+// live server; it is unreferenced only from the non-test build, which is why the
+// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
+// needs exactly this.
+//
+//nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) executeRound1(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.Round1AggMessage, error) {
 	// Create Round1 message
 	round1Msg := &transport.Round1Message{
@@ -363,7 +343,12 @@ func (c *HTTPClient) executeRound1(ctx context.Context, params *transport.DKGPar
 
 // executeRound2 executes Round2 of the DKG protocol.
 //
-//nolint:unused // Used by integration tests with build tag
+// real, working protocol plumbing exercised end to end by http_test.go against a
+// live server; it is unreferenced only from the non-test build, which is why the
+// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
+// needs exactly this.
+//
+//nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) executeRound2(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage, round1Agg *transport.Round1AggMessage) error {
 	// Create Round2 message with encrypted shares
 	round2Msg := &transport.Round2Message{
@@ -406,7 +391,12 @@ func (c *HTTPClient) executeRound2(ctx context.Context, params *transport.DKGPar
 
 // submitCertEqSignature submits a CertEq signature.
 //
-//nolint:unused // Used by integration tests with build tag
+// real, working protocol plumbing exercised end to end by http_test.go against a
+// live server; it is unreferenced only from the non-test build, which is why the
+// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
+// needs exactly this.
+//
+//nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) submitCertEqSignature(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) error {
 	// Create CertEq signature message
 	certEqMsg := &transport.CertEqSignMessage{
@@ -424,7 +414,12 @@ func (c *HTTPClient) submitCertEqSignature(ctx context.Context, params *transpor
 
 // retrieveCertificate retrieves the final certificate.
 //
-//nolint:unused // Used by integration tests with build tag
+// real, working protocol plumbing exercised end to end by http_test.go against a
+// live server; it is unreferenced only from the non-test build, which is why the
+// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
+// needs exactly this.
+//
+//nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) retrieveCertificate(ctx context.Context, sessionInfo *transport.SessionInfoMessage) ([]byte, error) {
 	certPath := CertificatePath(sessionInfo.SessionID)
 

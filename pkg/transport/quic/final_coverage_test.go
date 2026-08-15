@@ -21,6 +21,7 @@ package quic
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
@@ -219,17 +220,16 @@ func TestQUICRunDKGWithValidParams(t *testing.T) {
 	dkgCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 
+	// Valid params get as far as the ceremony and then fail closed: QUIC does
+	// not run the DKG (software task #61). The connect and join legs above
+	// still have to succeed to reach this point, which is what this test
+	// covers now.
 	result, err := client.RunDKG(dkgCtx, params)
-	if err != nil {
-		t.Fatalf("RunDKG failed: %v", err)
+	if !errors.Is(err, transport.ErrDKGNotImplemented) {
+		t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", err, result)
 	}
-
-	if result == nil {
-		t.Fatal("RunDKG returned nil result")
-	}
-
-	if result.SessionID != "test-run-dkg" {
-		t.Errorf("Expected session ID 'test-run-dkg', got %s", result.SessionID)
+	if result != nil {
+		t.Fatalf("expected nil result alongside the error, got %+v", result)
 	}
 }
 

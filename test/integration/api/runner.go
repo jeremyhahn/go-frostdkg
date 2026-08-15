@@ -20,6 +20,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -275,8 +276,11 @@ func (r *ConcurrentDKGRunner) RunParticipants(
 			}
 		}
 
+		// errors.Join, not %v: formatting the slice flattened every participant
+		// error into a string, so errors.Is/As could not see through the
+		// aggregate and a caller could only match on message text.
 		if len(errs) > 0 {
-			return nil, fmt.Errorf("DKG failed for %d participants: %v", len(errs), errs)
+			return nil, fmt.Errorf("DKG failed for %d participants: %w", len(errs), errors.Join(errs...))
 		}
 
 		r.mu.Lock()

@@ -16,6 +16,20 @@
 
 // Package http provides HTTP/REST transport for FROST DKG protocol.
 //
+// EXPERIMENTAL — this transport does NOT run the DKG ceremony. It implements
+// connection setup, session join and message relay only; Participant.RunDKG
+// returns transport.ErrDKGNotImplemented and no key material.
+//
+// Until v0.3.0-alpha RunDKG returned a DKGResult built from a fixed pattern
+// derived from the participant index, with a nil error — indistinguishable
+// from a real ceremony and reconstructable by anyone. Failing closed replaces
+// that. Wiring this transport to the real pkg/dkg driver is tracked as
+// software task #61; the per-round helpers it will need (executeRound1,
+// executeRound2, submitCertEqSignature, retrieveCertificate) are implemented
+// and tested in client.go, just not yet called from RunDKG.
+//
+// See package transport for the full statement.
+//
 // This package implements a RESTful API for distributed key generation using
 // standard library net/http with TLS 1.3 support. It provides:
 //   - Coordinator server for message relay

@@ -210,6 +210,11 @@ func (c *GRPCClient) Disconnect() error {
 }
 
 // RunDKG executes the FROST DKG protocol.
+//
+// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
+// join and session-info exchange happen as written, then this returns
+// transport.ErrDKGNotImplemented rather than key material. See package
+// transport and software task #61.
 func (c *GRPCClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	if !c.connected.Load() {
 		return nil, transport.ErrNotConnected
@@ -297,56 +302,17 @@ func (c *GRPCClient) waitForSessionInfo(ctx context.Context) (*transport.Session
 	}
 }
 
-// executeDKG executes the DKG protocol rounds.
+// executeDKG would run the DKG protocol rounds. It does not: this transport
+// carries the protocol messages but never drives the ceremony, so it has no
+// key material to return.
+//
+// It previously built a DKGResult from a fixed pattern derived from the
+// participant index and returned it with a nil error, which no caller could
+// tell apart from a real ceremony. Failing closed is the only safe behaviour
+// until the transport is wired to the real pkg/dkg driver (tracked as
+// software task #61).
 func (c *GRPCClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
-	// This is a simplified implementation - the actual DKG logic would go here
-	// For now, we'll just demonstrate the message flow
-
-	// In a real implementation, this would:
-	// 1. Execute Round 1 (VSS commitment and POP)
-	// 2. Wait for aggregated Round 1 data
-	// 3. Execute Round 2 (encrypted shares)
-	// 4. Wait for aggregated Round 2 data
-	// 5. Generate CertEq signature
-	// 6. Wait for final certificate
-	// 7. Return DKG result
-
-	// Placeholder result with unique data per participant
-	result := &transport.DKGResult{
-		SessionID:       c.sessionID,
-		SecretShare:     make([]byte, transport.SecretKeySize),
-		ThresholdPubkey: make([]byte, transport.PublicKeySize),
-		PublicShares:    make([][]byte, sessionInfo.NumParticipants),
-		RecoveryData:    make([]byte, 64),
-	}
-
-	// Fill with unique test data per participant
-	result.SecretShare[0] = byte(params.ParticipantIdx + 1)
-	for i := 1; i < transport.SecretKeySize; i++ {
-		result.SecretShare[i] = byte(0x42 + params.ParticipantIdx)
-	}
-
-	// Threshold pubkey is the same for all participants
-	for i := range result.ThresholdPubkey {
-		result.ThresholdPubkey[i] = byte(0xAB)
-	}
-
-	// Public shares differ by participant index
-	for i := range result.PublicShares {
-		result.PublicShares[i] = make([]byte, transport.PublicKeySize)
-		result.PublicShares[i][0] = byte(i + 1)
-		for j := 1; j < transport.PublicKeySize; j++ {
-			result.PublicShares[i][j] = byte(0xCD)
-		}
-	}
-
-	// Recovery data is the same for all participants in real DKG
-	// Use a deterministic value based on session
-	for i := range result.RecoveryData {
-		result.RecoveryData[i] = byte(0xEE)
-	}
-
-	return result, nil
+	return nil, transport.ErrDKGNotImplemented
 }
 
 // receiveMessages handles incoming messages from the stream.
