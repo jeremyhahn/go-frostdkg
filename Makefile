@@ -315,8 +315,19 @@ GOVULN_ALLOW := GO-2024-3218 GO-2026-4479
 .PHONY: vulncheck
 vulncheck:
 	@echo "Running vulnerability check with govulncheck..."
-	@OUT=$$(go run golang.org/x/vuln/cmd/govulncheck@latest ./... 2>&1) || true; \
+	@BIN=$$(mktemp -d); trap 'rm -rf "$$BIN"' EXIT; \
+	GOBIN=$$BIN go install golang.org/x/vuln/cmd/govulncheck@latest || { \
+		echo "govulncheck could not be installed — this is not a clean scan"; \
+		exit 1; \
+	}; \
+	set +e; OUT=$$($$BIN/govulncheck ./... 2>&1); RC=$$?; set -e; \
 	echo "$$OUT"; \
+	if [ $$RC -ne 0 ] && [ $$RC -ne 3 ]; then \
+		echo ""; \
+		echo "govulncheck failed to RUN (exit $$RC) — a compile error, an unreachable vuln"; \
+		echo "database or a changed output format all land here, not just findings."; \
+		exit 1; \
+	fi; \
 	FOUND=$$(echo "$$OUT" | sed -n 's/^Vulnerability #[0-9]*: \(GO-[0-9][0-9-]*\).*/\1/p' | sort -u); \
 	for id in $(GOVULN_ALLOW); do FOUND=$$(echo "$$FOUND" | grep -vx "$$id" || true); done; \
 	FOUND=$$(echo "$$FOUND" | tr -d '[:space:]'); \
@@ -332,23 +343,26 @@ mod-verify:
 	@echo "Verifying module integrity against go.sum..."
 	@go mod verify
 
+# trivy and trivy-image fail closed. A missing scanner used to print "skipping"
+# and return 0, so `make security` reported "Security suite passed" having
+# scanned nothing — devops.md §8 makes both scans blocking.
 .PHONY: trivy
 trivy:
 	@echo "Running Trivy filesystem scan..."
-	@if command -v trivy >/dev/null 2>&1; then \
-		trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 .; \
-	else \
-		echo "trivy not found - skipping (install: https://trivy.dev/docs/getting-started/installation/)"; \
-	fi
+	@command -v trivy >/dev/null 2>&1 || { \
+		echo "trivy is required by devops.md §8 (install: https://trivy.dev/docs/getting-started/installation/)"; \
+		exit 1; \
+	}
+	@trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 .
 
 .PHONY: trivy-image
 trivy-image:
 	@echo "Running Trivy image scan on $(DOCKER_IMAGE):$(DOCKER_TAG)..."
-	@if command -v trivy >/dev/null 2>&1; then \
-		trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 $(DOCKER_IMAGE):$(DOCKER_TAG); \
-	else \
-		echo "trivy not found - skipping (install: https://trivy.dev/docs/getting-started/installation/)"; \
-	fi
+	@command -v trivy >/dev/null 2>&1 || { \
+		echo "trivy is required by devops.md §8 (install: https://trivy.dev/docs/getting-started/installation/)"; \
+		exit 1; \
+	}
+	@trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 $(DOCKER_IMAGE):$(DOCKER_TAG)
 
 # =============================================================================
 # Docker Targets

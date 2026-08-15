@@ -48,7 +48,7 @@ ENV PKCS11_MODULE=/usr/lib/softhsm/libsofthsm2.so
 
 # Install Go (version will be managed by devcontainer feature)
 # This is a fallback if the feature doesn't work
-ARG GO_VERSION=1.26.1
+ARG GO_VERSION=1.26.6
 RUN if ! command -v go &> /dev/null; then \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf - && \
     echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile.d/go.sh; \
@@ -59,7 +59,7 @@ ENV PATH=$PATH:/usr/local/go/bin:/home/vscode/go/bin
 # Install Go tools
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && \
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
 # Install pkcs11-tool for testing
 RUN apt-get update && apt-get install -y --no-install-recommends \

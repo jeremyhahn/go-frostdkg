@@ -13,13 +13,18 @@
 # (see test/integration/Dockerfile). These patterns are the second line of
 # defence: if a credentials file is ever written into the working tree, it must
 # not be copyable into an image.
-.env
-.env.*
-*.pem
-*.key
-*.p12
-*.pfx
-gomodauth*
+#
+# Every pattern is **-prefixed on purpose. .dockerignore matches whole path
+# segments and a bare `*` does not cross `/`, so `.env` and `*.pem` would
+# exclude ONLY the context root — leaving .devcontainer/.env and
+# test/fixtures/server.key to be swept in by `COPY . .`.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/gomodauth*
 **/secrets/
 
 # Build output and local scratch — rebuilt inside the image anyway.

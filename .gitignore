@@ -36,6 +36,18 @@ build/
 # Log files
 *.log
 
+# Credentials — never in history on either remote (version-control.md §4).
+# dependency-resolution.md §6 puts the Gitea module token in a .devcontainer/.env,
+# so these must be ignored at every depth, not just at the repo root.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+gomodauth*
+
 # Work in progress files
 *.wip
 *.bak

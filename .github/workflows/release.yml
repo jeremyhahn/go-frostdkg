@@ -179,14 +179,52 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest
 
+      # Same reasoning as ci.yml's docker job: go.mod pins first-party modules
+      # published to the internal Gitea, `go mod download` inside the image
+      # cannot reach them on its own, and a job environment does not cross into
+      # a docker build. Staged under RUNNER_TEMP, outside the build context,
+      # because Dockerfile.release ends with `COPY . .`. Read from the shell
+      # environment, NOT ${{ env.X }} — that reads this workflow's env: block
+      # and would silently write blanks.
+      - name: Stage module-fetch credentials
+        run: |
+          set -eu
+          umask 077
+          : > "${RUNNER_TEMP}/gomodauth.env"
+          if [ -n "${GIT_CONFIG_KEY_0:-}" ]; then
+            {
+              printf 'export GOPRIVATE=%s\n' "${GOPRIVATE:-}"
+              printf 'export GIT_CONFIG_COUNT=%s\n' "${GIT_CONFIG_COUNT:-}"
+              printf 'export GIT_CONFIG_KEY_0=%s\n' "${GIT_CONFIG_KEY_0}"
+              printf 'export GIT_CONFIG_VALUE_0=%s\n' "${GIT_CONFIG_VALUE_0:-}"
+            } > "${RUNNER_TEMP}/gomodauth.env"
+            echo "staged Gitea module credentials"
+          else
+            echo "no Gitea credentials in this environment; resolving from the public proxy"
+          fi
+
+      # buildx resolves secret-files paths in an expression context where
+      # ${{ runner.temp }} can come back empty (dependency-resolution.md §6,
+      # the go-recountly trap), so compute it in the shell and pass it on.
+      - name: Resolve credentials path
+        id: gomodauth
+        run: echo "path=${RUNNER_TEMP}/gomodauth.env" >> "$GITHUB_OUTPUT"
+
       - name: Create Dockerfile
         run: |
           cat > Dockerfile.release << 'DOCKERFILE'
+          # syntax=docker/dockerfile:1.7
           FROM golang:1.26.6-alpine AS builder
           RUN apk add --no-cache git ca-certificates
           WORKDIR /build
           COPY go.mod go.sum ./
-          RUN go mod download
+          # Optional secret mount: sourced, never exported, so the token reaches
+          # neither a layer, image metadata, nor a command line. Absent on
+          # GitHub, where these modules resolve from the public proxy.
+          RUN --mount=type=secret,id=gomodauth \
+              set -eu; \
+              if [ -f /run/secrets/gomodauth ]; then . /run/secrets/gomodauth; fi; \
+              go mod download
           COPY . .
           ARG VERSION
           ARG COMMIT
@@ -216,6 +254,8 @@ jobs:
           build-args: |
             VERSION=${{ needs.create-release.outputs.version }}
             COMMIT=${{ github.sha }}
+          secret-files: |
+            gomodauth=${{ steps.gomodauth.outputs.path }}
           cache-from: type=gha
 
       # The trivy CLI works identically on both hosts; trivy-action's setup
@@ -254,8 +294,14 @@ jobs:
           build-args: |
             VERSION=${{ needs.create-release.outputs.version }}
             COMMIT=${{ github.sha }}
+          secret-files: |
+            gomodauth=${{ steps.gomodauth.outputs.path }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Remove staged credentials
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/gomodauth.env"
 
   create-checksums:
     name: Create Checksums
