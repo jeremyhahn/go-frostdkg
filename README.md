@@ -1,6 +1,6 @@
 # go-frostdkg
 
-[![Go Version](https://img.shields.io/badge/Go-1.26.1+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26.6+-blue.svg)](https://golang.org)
 [![Coverage](https://img.shields.io/badge/coverage-60%25-yellow.svg)](https://github.com/jeremyhahn/go-frostdkg)
 [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)](https://github.com/jeremyhahn/go-frostdkg)
