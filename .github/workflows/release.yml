@@ -328,15 +328,32 @@ jobs:
           TAG_NAME=${GITHUB_REF#refs/tags/}
           gh release download ${TAG_NAME} --repo ${{ github.repository }} --pattern "*.sha256" --dir checksums || true
 
+      # If the aggregate cannot be built, publish nothing rather than a
+      # placeholder. The previous version wrote the literal string "No
+      # checksums" into checksums.txt and uploaded it unconditionally — and on
+      # Gitea that is the NORMAL outcome, because the `gh` above talks to
+      # api.github.com and cannot see this release at all. v0.2.0-alpha shipped
+      # exactly that: a 13-byte checksums.txt. For a threshold-signature
+      # binary, an artifact that looks like a checksum manifest and is not one
+      # is worse than an absent one.
+      #
+      # Nothing is lost by skipping it: build-binaries already publishes a
+      # per-binary .sha256 next to every binary, and those are the
+      # authoritative checksums. checksums.txt is only a convenience aggregate.
       - name: Create master checksums
+        id: checksums
         run: |
-          if [ -d checksums ] && [ "$(ls -A checksums 2>/dev/null)" ]; then
+          if [ -d checksums ] && [ -n "$(ls -A checksums 2>/dev/null)" ]; then
             cat checksums/*.sha256 > checksums.txt
+            echo "have=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No checksums" > checksums.txt
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "No per-binary .sha256 files could be gathered; skipping the"
+            echo "aggregate. The per-binary .sha256 release assets stand alone."
           fi
 
       - name: Upload checksums
+        if: steps.checksums.outputs.have == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: checksums.txt
