@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-alpha] - 2026-08-15
+
+MINOR, not PATCH. The owner's ruling offered PATCH on the grounds that this is
+a behaviour correction with no new API; implementing it well needed a new
+exported sentinel (`transport.ErrDKGNotImplemented`), so callers can match with
+`errors.Is` instead of parsing a string. Added exported API is MINOR pre-1.0
+per conventions/release-versioning.md §1, and the behaviour change is breaking
+for anything that compiled against the old success return — which lands in
+MINOR too. Both routes give the same answer.
+
+### Changed — BREAKING: the network transports no longer return key material
+
+`Participant.RunDKG` on the **quic, grpc, grpc/unix, http, libp2p and mcp**
+transports now returns `transport.ErrDKGNotImplemented` and a nil result.
+
+They never ran the DKG. Each built a `DKGResult` whose `SecretShare` was
+`byte(0x42 + participantIdx)` repeated, whose `ThresholdPubkey` was 32 bytes of
+`0xAB`, and returned it with a **nil error** — a value indistinguishable from a
+real ceremony and reconstructable by anyone who knew the participant index. Any
+caller wiring a network transport to a signer received that as a threshold key.
+
+Connection setup, session join, session-info exchange and message relay are
+real, are unchanged, and still run; only the ceremony is absent. The FROST DKG
+itself in `pkg/dkg` is complete and is what the library API exercises. Wiring
+the transports to it is tracked as software task #61.
+
+The **in-memory transport is exempt** and still returns a deterministic result:
+it is a test double, and that is the point.
+
+### Added
+
+- `transport.ErrDKGNotImplemented`.
+
+### Fixed
+
+- `ConcurrentDKGRunner.RunParticipants` aggregated participant errors with
+  `fmt.Errorf("...: %v", errs)`, flattening them into a string so `errors.Is`
+  and `errors.As` could not see through the aggregate. It now uses
+  `errors.Join`.
+
+### Documentation
+
+- The `transport` package doc, and `doc.go` for each network transport, carry
+  an EXPERIMENTAL banner stating plainly that the transport does not run the
+  ceremony. `quic`, `grpc` and `mcp` had no package comment at all and now have
+  one.
+- The four HTTP per-round helpers (`executeRound1`, `executeRound2`,
+  `submitCertEqSignature`, `retrieveCertificate`) are **kept**. They are not
+  dead scaffolding: `http_test.go` exercises all four end to end against a live
+  server, and #61's wiring needs exactly them. Their `//nolint:unused` comments
+  claimed they were "used by integration tests with build tag", which was
+  wrong; they now say what is actually true.
+
+### Testing
+
+Every suite that asserted the fabricated result now asserts the error. Worth
+recording what those suites had been proving: `TestProtocolParity_2of3` and
+`_3of5` compared transports against each other and found them "functionally
+equivalent" — they agreed because all of them fabricated the *same* constants.
+The per-transport tests asserted only the *lengths* of `SecretShare` and
+`ThresholdPubkey`, which the fill satisfied. Fifteen tests across nine files
+were updated; the setup, connect, join and relay coverage they provide is
+retained.
+
 ## [0.2.0-alpha] - 2026-08-15
 
 MINOR rather than PATCH because it adds an exported identifier
