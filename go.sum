@@ -251,8 +251,8 @@ github.com/jackpal/go-nat-pmp v1.0.2 h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7Bd
 github.com/jackpal/go-nat-pmp v1.0.2/go.mod h1:QPH045xvCAeXUZOxsnwmrtiCoxIr9eob+4orBN1SBKc=
 github.com/jbenet/go-temp-err-catcher v0.1.0 h1:zpb3ZH6wIE8Shj2sKS+khgRvf7T7RABoLk/+KKHggpk=
 github.com/jbenet/go-temp-err-catcher v0.1.0/go.mod h1:0kJRvmDZXNMIiJirNPEYfhpPwbGVtZVWC34vc5WLsDk=
-github.com/jeremyhahn/go-frost v0.1.7-alpha h1:MbylSLPRRPX0070vuSacOj9l0KqRGTe6w6Oy3N4Fd/0=
-github.com/jeremyhahn/go-frost v0.1.7-alpha/go.mod h1:Y0sA8Y4EkJm50aMHCwk8Cxr1R1vLDlPrw8DAxBy51jI=
+github.com/jeremyhahn/go-frost v0.1.8-alpha h1:VS2X0v4jNAZkHBO0VhWymDu7a/XGdHfAkZwizXAgwwE=
+github.com/jeremyhahn/go-frost v0.1.8-alpha/go.mod h1:Vi6mpuFab3p+XiK9oJ47qRIsbrk2TKIx484T2zAppXQ=
 github.com/json-iterator/go v1.1.11/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/uOdHXbAo4=
 github.com/jstemmer/go-junit-report v0.0.0-20190106144839-af01ea7f8024/go.mod h1:6v2b51hI/fHJwM22ozAgKL4VKDeJcHhJFhtBdhmNjmU=
 github.com/jstemmer/go-junit-report v0.9.1/go.mod h1:Brl9GWCQeLvo8nXZwPNNblvFj/XSXhF0NWZEnDohbsk=
