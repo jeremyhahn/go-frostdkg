@@ -115,6 +115,16 @@ var (
 
 	// ErrInvalidRandomness indicates invalid randomness (wrong length or not random).
 	ErrInvalidRandomness = errors.New("transport: invalid randomness (must be 32 bytes)")
+
+	// ErrSenderIdentityMismatch indicates a message declared a sender index
+	// other than the one bound to the authenticated connection it arrived on.
+	//
+	// The declared index is what every other participant uses to attribute a
+	// commitment, a share, or a CertEq signature, so a coordinator that relays
+	// it unchecked lets any participant speak as any other. The index a
+	// coordinator assigns to an authenticated peer is the only authority on
+	// who sent what.
+	ErrSenderIdentityMismatch = errors.New("transport: sender index does not match the authenticated peer")
 )
 
 // TLS and security errors.
@@ -313,5 +323,36 @@ func NewParticipantError(participantID string, index int, err error) error {
 		ParticipantID: participantID,
 		Index:         index,
 		Err:           err,
+	}
+}
+
+// SenderIdentityError reports a message whose declared sender index does not
+// match the index bound to the authenticated peer that sent it. It carries
+// both indices so an operator can tell an impersonation attempt from a
+// participant that has lost track of its own index.
+type SenderIdentityError struct {
+	// PeerID identifies the authenticated peer the message arrived from.
+	PeerID string
+	// BoundIndex is the index the coordinator assigned to that peer.
+	BoundIndex int
+	// ClaimedIndex is the index the message declared.
+	ClaimedIndex int
+}
+
+func (e *SenderIdentityError) Error() string {
+	return fmt.Sprintf("%v (peer=%s, bound=%d, claimed=%d)",
+		ErrSenderIdentityMismatch, e.PeerID, e.BoundIndex, e.ClaimedIndex)
+}
+
+func (e *SenderIdentityError) Unwrap() error {
+	return ErrSenderIdentityMismatch
+}
+
+// NewSenderIdentityError creates a new SenderIdentityError.
+func NewSenderIdentityError(peerID string, boundIndex, claimedIndex int) error {
+	return &SenderIdentityError{
+		PeerID:       peerID,
+		BoundIndex:   boundIndex,
+		ClaimedIndex: claimedIndex,
 	}
 }
