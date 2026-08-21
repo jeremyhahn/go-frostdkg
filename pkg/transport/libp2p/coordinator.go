@@ -130,9 +130,16 @@ func NewP2PCoordinatorFromTransportConfig(sessionID string, transportCfg *transp
 		return nil, transport.ErrInvalidConfig
 	}
 
-	// Convert transport.Config to HostConfig
+	// Convert transport.Config to HostConfig. transportCfg.Address is a
+	// "host:port" the way every other transport writes it; libp2p needs a
+	// multiaddr, and an unset address means DefaultCoordinatorPort.
+	listenAddr, err := ListenMultiaddr(transportCfg.Address)
+	if err != nil {
+		return nil, err
+	}
+
 	hostCfg := &HostConfig{
-		ListenAddrs: []string{transportCfg.Address},
+		ListenAddrs: []string{listenAddr},
 		EnableNoise: true,
 		EnableTLS:   true,
 		EnableRelay: false,

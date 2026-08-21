@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
+	"github.com/jeremyhahn/go-frostdkg/pkg/transport/libp2p"
 	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -109,79 +110,34 @@ func (m *MockTransportFactory) NewCoordinator(protocol transport.Protocol, cfg *
 	return args.Get(0).(transport.Coordinator), args.Error(1)
 }
 
-// libp2pCoordinatorPort is the TCP port every libp2p coordinator in this
-// package ends up on: DefaultTransportFactory rewrites any configured listen
-// address to /ip4/0.0.0.0/tcp/9000 (see NewCoordinator). Because it is fixed
-// and shared, tests that stand one up must hand the port back before the next
-// test binds it.
-const libp2pCoordinatorPort = 9000
-
-// waitForTCPPortFree polls until the port can be bound again, or the timeout
-// expires. It exists because libp2p tears its listener down asynchronously, so
-// a coordinator's Stop returning does not mean the socket is released yet;
-// sleeping a fixed interval instead of waiting on the real condition is what
-// made this package flake under -race on a loaded runner.
-func waitForTCPPortFree(port int, timeout time.Duration) error {
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
-	deadline := time.Now().Add(timeout)
-
-	for {
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			_ = ln.Close()
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("port %d still bound after %s: %w", port, timeout, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+// freeLoopbackPort returns a TCP port on the loopback interface that is free
+// at the moment it returns, by binding one and handing it straight back.
+//
+// This replaces a fixed tcp/9000 and the wait-and-skip machinery that went
+// with it. The factory used to rewrite every libp2p listen address to
+// /ip4/0.0.0.0/tcp/9000 regardless of configuration, so every coordinator in
+// this binary — and, because the Gitea runner gives job containers the HOST
+// network namespace, every concurrent job on that host — contended for one
+// port. Now that the configured address is honoured, each test can take a port
+// nobody else is on.
+func freeLoopbackPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	return port
 }
 
-// releaseLibp2pPort hands tcp/9000 back for the next test in this binary. It is
-// best-effort: a failure here is reported, not fatal, because the port is not
-// exclusively ours (see requireLibp2pPort).
-func releaseLibp2pPort(t *testing.T) {
+// loopbackAddress returns a "127.0.0.1:<free port>" transport address.
+func loopbackAddress(t *testing.T) string {
 	t.Helper()
-	// Short bound on purpose: this only has to outlast our own listener's
-	// asynchronous teardown. If the port is still busy it belongs to someone
-	// else, and the next test's requireLibp2pPort will skip rather than wait.
-	if err := waitForTCPPortFree(libp2pCoordinatorPort, 5*time.Second); err != nil {
-		t.Logf("libp2p coordinator port not released: %v", err)
-	}
-}
-
-// requireLibp2pPort skips rather than fails when tcp/9000 is held by something
-// outside this test binary.
-//
-// The port is not ours to reserve. DefaultTransportFactory pins every libp2p
-// coordinator to a fixed 0.0.0.0:9000 regardless of the configured address, and
-// the Gitea runner gives job containers the HOST network namespace
-// (container.network: "host"), so a concurrent job from any repository on that
-// host contends for the same port. That is an environment the test cannot
-// control, which is what testing-guidelines.md §Fault Injection sanctions
-// probe-and-skip for — and this probe checks the real condition rather than
-// guessing from the environment.
-//
-// The durable fix is for the factory to honour the configured address instead
-// of rewriting it to 9000; that changes production listen behaviour and is
-// tracked separately as an owner decision.
-func requireLibp2pPort(t *testing.T) {
-	t.Helper()
-	if err := waitForTCPPortFree(libp2pCoordinatorPort, 30*time.Second); err != nil {
-		t.Skipf("skipping: tcp/%d is held by something outside this test binary "+
-			"(the runner shares the host network namespace): %v",
-			libp2pCoordinatorPort, err)
-	}
+	return fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t))
 }
 
 // TestDefaultTransportFactory tests the default factory implementation
 func TestDefaultTransportFactory(t *testing.T) {
 	factory := &DefaultTransportFactory{}
-
-	// Anything earlier in the binary that stood up a libp2p coordinator may
-	// still be releasing tcp/9000.
-	releaseLibp2pPort(t)
 
 	tests := []struct {
 		name            string
@@ -201,7 +157,7 @@ func TestDefaultTransportFactory(t *testing.T) {
 		t.Run("participant-"+tt.name, func(t *testing.T) {
 			cfg := &transport.Config{
 				Protocol: tt.protocol,
-				Address:  "localhost:9000",
+				Address:  loopbackAddress(t),
 			}
 
 			participant, err := factory.NewParticipant(tt.protocol, cfg)
@@ -222,16 +178,9 @@ func TestDefaultTransportFactory(t *testing.T) {
 		})
 
 		t.Run("coordinator-"+tt.name, func(t *testing.T) {
-			// Only the libp2p coordinator is pinned to the shared fixed port,
-			// so only this leg has to give way when something else holds it.
-			// The other protocols keep running either way.
-			if tt.protocol == transport.ProtocolLibp2p {
-				requireLibp2pPort(t)
-			}
-
 			cfg := &transport.Config{
 				Protocol: tt.protocol,
-				Address:  "localhost:9000",
+				Address:  loopbackAddress(t),
 			}
 
 			// QUIC requires TLS certificates - generate them for the test
@@ -262,19 +211,68 @@ func TestDefaultTransportFactory(t *testing.T) {
 				// the constructors return a typed nil on error, which is not
 				// equal to nil through the interface and would panic below.
 				if assert.NoError(t, err) && assert.NotNil(t, coordinator) {
-					// The libp2p coordinator is pinned to tcp/9000 by
-					// DefaultTransportFactory, so leaking it here makes every
-					// later libp2p coordinator in this binary fail to bind.
 					t.Cleanup(func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer cancel()
 						_ = coordinator.Stop(ctx)
-						releaseLibp2pPort(t)
 					})
 				}
 			}
 		})
 	}
+}
+
+// TestDefaultTransportFactory_LibP2PHonoursTheConfiguredAddress is the
+// regression test for the behaviour this factory used to get wrong in both
+// directions: it rewrote any configured libp2p listen address to
+// /ip4/0.0.0.0/tcp/9000 unless the address was exactly "0.0.0.0:9000", in
+// which case it fell through to DefaultHostConfig() and listened on an
+// ephemeral port instead. A test pinned to port 9000 passes either way, which
+// is why this one asks for a port the old code could not have produced.
+func TestDefaultTransportFactory_LibP2PHonoursTheConfiguredAddress(t *testing.T) {
+	factory := &DefaultTransportFactory{}
+	port := freeLoopbackPort(t)
+
+	cfg := &transport.Config{
+		Protocol: transport.ProtocolLibp2p,
+		Address:  fmt.Sprintf("127.0.0.1:%d", port),
+	}
+	sessionCfg := &transport.SessionConfig{Threshold: 2, NumParticipants: 3}
+
+	coordinator, err := factory.NewCoordinator(transport.ProtocolLibp2p, cfg, sessionCfg, "listen-address-session")
+	require.NoError(t, err)
+	require.NotNil(t, coordinator)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = coordinator.Stop(ctx)
+	})
+
+	addr := coordinator.Address()
+	require.Contains(t, addr, fmt.Sprintf("/tcp/%d", port), "the configured port must be the one bound")
+	require.Contains(t, addr, "/ip4/127.0.0.1/", "the configured interface must be the one bound")
+	require.NotContains(t, addr, "/tcp/9000", "9000 is the default, not an override")
+}
+
+// TestDefaultTransportFactory_LibP2PDefaultsToPort9000 pins the other half of
+// the contract: an unset address still means 9000.
+func TestDefaultTransportFactory_LibP2PDefaultsToPort9000(t *testing.T) {
+	listenAddr, err := libp2p.ListenMultiaddr("")
+	require.NoError(t, err)
+	require.Equal(t, "/ip4/0.0.0.0/tcp/9000", listenAddr)
+}
+
+// TestDefaultTransportFactory_RejectsAnUnusableAddress proves the factory
+// fails at construction rather than at listen time.
+func TestDefaultTransportFactory_RejectsAnUnusableAddress(t *testing.T) {
+	factory := &DefaultTransportFactory{}
+	cfg := &transport.Config{Protocol: transport.ProtocolLibp2p, Address: "127.0.0.1:not-a-port"}
+	sessionCfg := &transport.SessionConfig{Threshold: 2, NumParticipants: 3}
+
+	coordinator, err := factory.NewCoordinator(transport.ProtocolLibp2p, cfg, sessionCfg, "bad-address-session")
+
+	require.ErrorIs(t, err, transport.ErrInvalidAddress)
+	require.Nil(t, coordinator)
 }
 
 // TestRunParticipantWithMock tests runParticipant with mocked transport

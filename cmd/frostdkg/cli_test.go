@@ -1272,11 +1272,6 @@ func TestRunCoordinatorLibp2pDefaultAddress(t *testing.T) {
 	_ = runCoordinator(coordinatorCmd, nil)
 
 	protocol = "grpc" // Reset
-
-	// Hand tcp/9000 back before the next test binds it. libp2p releases the
-	// listener asynchronously, so waiting on the port itself is the only
-	// reliable signal -- a fixed sleep is what made this flake under -race.
-	releaseLibp2pPort(t)
 }
 
 // TestRunCoordinatorLibp2pCustomAddress tests libp2p with custom address
@@ -1292,11 +1287,6 @@ func TestRunCoordinatorLibp2pCustomAddress(t *testing.T) {
 	_ = runCoordinator(coordinatorCmd, nil)
 
 	protocol = "grpc" // Reset
-
-	// Hand tcp/9000 back before the next test binds it. libp2p releases the
-	// listener asynchronously, so waiting on the port itself is the only
-	// reliable signal -- a fixed sleep is what made this flake under -race.
-	releaseLibp2pPort(t)
 }
 
 // TestRunParticipantWithValidHostkey tests participant with valid 32-byte hostkey
@@ -1959,11 +1949,6 @@ func TestRunParticipantLibp2pProtocol(t *testing.T) {
 	_ = runParticipant(participantCmd, nil)
 
 	protocol = "grpc" // Reset
-
-	// Hand tcp/9000 back before the next test binds it. libp2p releases the
-	// listener asynchronously, so waiting on the port itself is the only
-	// reliable signal -- a fixed sleep is what made this flake under -race.
-	releaseLibp2pPort(t)
 }
 
 // TestRunCoordinatorLibp2pProtocol tests libp2p coordinator
@@ -1979,11 +1964,6 @@ func TestRunCoordinatorLibp2pProtocol(t *testing.T) {
 	_ = runCoordinator(coordinatorCmd, nil)
 
 	protocol = "grpc" // Reset
-
-	// Hand tcp/9000 back before the next test binds it. libp2p releases the
-	// listener asynchronously, so waiting on the port itself is the only
-	// reliable signal -- a fixed sleep is what made this flake under -race.
-	releaseLibp2pPort(t)
 }
 
 // TestRunCoordinatorLibp2pWithMultiaddrParsing tests libp2p multiaddr parsing
@@ -1999,11 +1979,6 @@ func TestRunCoordinatorLibp2pWithMultiaddrParsing(t *testing.T) {
 	_ = runCoordinator(coordinatorCmd, nil)
 
 	protocol = "grpc" // Reset
-
-	// Hand tcp/9000 back before the next test binds it. libp2p releases the
-	// listener asynchronously, so waiting on the port itself is the only
-	// reliable signal -- a fixed sleep is what made this flake under -race.
-	releaseLibp2pPort(t)
 }
 
 // TestCertgenEd25519WithSingleHost tests Ed25519 with single host

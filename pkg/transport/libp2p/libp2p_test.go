@@ -23,6 +23,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -286,6 +288,21 @@ func TestHostConnect(t *testing.T) {
 	})
 }
 
+// freeLoopbackPort returns a TCP port on the loopback interface that is free at
+// the moment it returns, by binding one and handing it straight back.
+func freeLoopbackPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to reserve a port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatalf("failed to release the reserved port: %v", err)
+	}
+	return port
+}
+
 // TestNewHostFromTransportConfig tests creating host from transport config.
 func TestNewHostFromTransportConfig(t *testing.T) {
 	ctx := context.Background()
@@ -313,6 +330,40 @@ func TestNewHostFromTransportConfig(t *testing.T) {
 		}
 		if host.HasTLS() {
 			t.Error("should not have TLS configured")
+		}
+	})
+
+	// transport.Config.Address is a "host:port" everywhere else in the
+	// transport layer. It used to be handed to libp2p verbatim, where it is
+	// not a multiaddr at all and the host fails to start.
+	t.Run("host:port config binds what was configured", func(t *testing.T) {
+		port := freeLoopbackPort(t)
+		cfg := &transport.Config{Address: fmt.Sprintf("127.0.0.1:%d", port)}
+
+		host, err := NewHostFromTransportConfig(ctx, cfg)
+		if err != nil {
+			t.Fatalf("failed to create host: %v", err)
+		}
+		defer func() { _ = host.Close() }()
+
+		want := fmt.Sprintf("/tcp/%d", port)
+		addrs := host.AddrStrings()
+		found := false
+		for _, a := range addrs {
+			if strings.Contains(a, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected an address containing %s, got %v", want, addrs)
+		}
+	})
+
+	t.Run("unusable address is rejected at construction", func(t *testing.T) {
+		cfg := &transport.Config{Address: "127.0.0.1:not-a-port"}
+
+		if _, err := NewHostFromTransportConfig(ctx, cfg); !errors.Is(err, transport.ErrInvalidAddress) {
+			t.Errorf("expected ErrInvalidAddress, got %v", err)
 		}
 	})
 }
@@ -828,6 +879,31 @@ func TestCoordinatorFromTransportConfigBasic(t *testing.T) {
 
 		if coordinator.SessionID() != sessionID {
 			t.Errorf("session ID mismatch: got %s, want %s", coordinator.SessionID(), sessionID)
+		}
+	})
+
+	t.Run("host:port config binds what was configured", func(t *testing.T) {
+		port := freeLoopbackPort(t)
+		transportCfg := &transport.Config{Address: fmt.Sprintf("127.0.0.1:%d", port)}
+
+		coordinator, err := NewP2PCoordinatorFromTransportConfig(sessionID, transportCfg, sessionConfig)
+		if err != nil {
+			t.Fatalf("failed to create coordinator: %v", err)
+		}
+		defer func() { _ = coordinator.Stop(context.Background()) }()
+
+		want := fmt.Sprintf("/tcp/%d", port)
+		if addr := coordinator.Address(); !strings.Contains(addr, want) {
+			t.Errorf("expected an address containing %s, got %s", want, addr)
+		}
+	})
+
+	t.Run("unusable address is rejected at construction", func(t *testing.T) {
+		transportCfg := &transport.Config{Address: "127.0.0.1:not-a-port"}
+
+		_, err := NewP2PCoordinatorFromTransportConfig(sessionID, transportCfg, sessionConfig)
+		if !errors.Is(err, transport.ErrInvalidAddress) {
+			t.Errorf("expected ErrInvalidAddress, got %v", err)
 		}
 	})
 }

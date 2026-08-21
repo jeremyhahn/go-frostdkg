@@ -185,8 +185,16 @@ func NewHostFromTransportConfig(ctx context.Context, cfg *transport.Config) (*DK
 		return nil, transport.ErrInvalidConfig
 	}
 
+	// cfg.Address is a "host:port" the way every other transport writes it;
+	// libp2p needs a multiaddr, and an unset address means
+	// DefaultCoordinatorPort.
+	listenAddr, err := ListenMultiaddr(cfg.Address)
+	if err != nil {
+		return nil, err
+	}
+
 	hostCfg := &HostConfig{
-		ListenAddrs:  []string{cfg.Address},
+		ListenAddrs:  []string{listenAddr},
 		EnableNoise:  true,
 		EnableTLS:    true,
 		EnableRelay:  false,

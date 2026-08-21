@@ -66,13 +66,12 @@ func (f *DefaultTransportFactory) NewCoordinator(proto transport.Protocol, cfg *
 	case transport.ProtocolQUIC:
 		return quic.NewQUICServer(cfg, sessionCfg)
 	case transport.ProtocolLibp2p:
-		hostCfg := libp2p.DefaultHostConfig()
-		// Convert listen address for libp2p
-		if cfg.Address != "" && cfg.Address != "0.0.0.0:9000" {
-			// Parse host:port format
-			// Note: This is a simplified conversion. Production code would need better parsing.
-			hostCfg.ListenAddrs = []string{"/ip4/0.0.0.0/tcp/9000"}
+		listenAddr, err := libp2p.ListenMultiaddr(cfg.Address)
+		if err != nil {
+			return nil, err
 		}
+		hostCfg := libp2p.DefaultHostConfig()
+		hostCfg.ListenAddrs = []string{listenAddr}
 		return libp2p.NewP2PCoordinator(sessionID, sessionCfg, hostCfg)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s (supported: grpc, http, quic, unix, libp2p)", proto)
