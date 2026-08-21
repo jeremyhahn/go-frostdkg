@@ -51,7 +51,10 @@ type QUICClient struct {
 	conn      *quic.Conn
 	stream    *quic.Stream
 	connected atomic.Bool
-	connMu    sync.RWMutex
+	// disconnected latches once Disconnect has run: shutdownChan is created
+	// once and closed there, so the client cannot be connected again.
+	disconnected atomic.Bool
+	connMu       sync.RWMutex
 
 	// Message handling
 	incomingChan chan *transport.Envelope
@@ -101,6 +104,16 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 
 	if c.connected.Load() {
 		return transport.ErrAlreadyConnected
+	}
+	// A disconnected client is spent, not reusable. shutdownChan is created
+	// once and closed by Disconnect, so a second Connect would hand its
+	// receive goroutine an already-closed channel and that goroutine would
+	// exit immediately, leaving a connection nothing reads from. Refusing is
+	// the honest form of a reconnect this type does not implement; it also
+	// keeps a Connect from installing a new connection while a Disconnect is
+	// still tearing the old one down. Reconnect support is #21.
+	if c.disconnected.Load() {
+		return transport.ErrSessionClosed
 	}
 
 	// Create TLS configuration
@@ -171,34 +184,46 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 }
 
 // Disconnect closes the connection to the coordinator.
+//
+// The lock is released before waiting on the receive goroutine, and that
+// ordering is load-bearing: receiveMessages takes connMu.RLock on every
+// iteration (see readMessage), so holding the write lock across wg.Wait means
+// the waiter is holding the lock its goroutine needs in order to finish. That
+// deadlocked the client outright — CI run 4495 sat in it until the test
+// timeout killed the process.
 func (c *QUICClient) Disconnect() error {
 	c.connMu.Lock()
-	defer c.connMu.Unlock()
-
 	if !c.connected.Load() {
+		c.connMu.Unlock()
 		return transport.ErrNotConnected
 	}
 
-	// Signal shutdown
+	// Signal shutdown. Clearing connected under the lock is what makes a
+	// concurrent Disconnect return ErrNotConnected rather than close an
+	// already-closed shutdownChan.
 	close(c.shutdownChan)
 	c.connected.Store(false)
+	c.disconnected.Store(true)
 
-	// Close stream
-	if c.stream != nil {
-		_ = c.stream.Close()
-		c.stream = nil
+	// Take BOTH the stream and the connection now. After this unlock,
+	// Disconnect works only from these locals: re-reading c.conn after the
+	// wait would let it close a connection it never opened.
+	stream := c.stream
+	conn := c.conn
+	c.stream = nil
+	c.conn = nil
+	c.connMu.Unlock()
+
+	// Closing the stream unblocks a receive goroutine parked in a read; a
+	// goroutine between iterations sees the nil stream and stops.
+	if stream != nil {
+		_ = stream.Close()
 	}
 
-	// Wait for goroutines
 	c.wg.Wait()
 
-	// Close connection
-	if c.conn != nil {
-		err := c.conn.CloseWithError(0, "client disconnect")
-		c.conn = nil
-		if err != nil {
-			return err
-		}
+	if conn != nil {
+		return conn.CloseWithError(0, "client disconnect")
 	}
 
 	return nil
