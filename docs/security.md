@@ -150,6 +150,21 @@ defer output.ZeroizeWithGroup(cs.Group())
 dkg.ZeroBytes(secretKey)
 ```
 
+**A borrower never wipes what it borrowed.** A `HostKey` passed into any of
+the `*WithHostKey` entry points stays owned by the caller: the DKG state holds
+a reference for the ceremony and its `Zeroize()` only drops that reference.
+Zeroizing the key is the caller's job, and only once the key itself is
+finished — not once a session is. A host key is a long-lived identity key that
+signs both steps of a ceremony and usually outlives many ceremonies.
+
+```go
+hostKey, err := dkg.GenerateSoftwareHostKey(cs)
+if err != nil { /* ... */ }
+defer hostKey.Zeroize() // the owner zeroizes; the DKG state never does
+
+state1, msg1, err := dkg.FROSTDKGFullParticipantStep1WithHostKey(cs, hostKey, /* ... */)
+```
+
 ## Dependency Security
 
 Dependencies are regularly audited using:

@@ -1408,6 +1408,9 @@ func frostDKGECDHWithHostKey(cs ciphersuite.Ciphersuite, hostKey HostKey, myPubn
 }
 
 // FROSTDKGEncParticipantStateHK holds encrypted DKG state with HostKey support.
+//
+// HostKey is borrowed, not owned: see the ownership rule on
+// FROSTDKGEncParticipantRound1WithHostKey.
 type FROSTDKGEncParticipantStateHK struct {
 	*FROSTDKGParticipantState
 	HostKey     HostKey
@@ -1416,7 +1419,10 @@ type FROSTDKGEncParticipantStateHK struct {
 }
 
 // Zeroize clears sensitive data from the state.
-// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
+//
+// The HostKey is BORROWED from the caller, so Zeroize drops the reference
+// without destroying the key. Zeroizing it here would wipe a long-lived
+// identity key the caller still owns and the rest of the ceremony still needs.
 func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 	if s == nil {
 		return
@@ -1425,14 +1431,17 @@ func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 		s.FROSTDKGParticipantState.Zeroize()
 	}
 	s.FROSTDKGParticipantState = nil
-	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
-		sk.Zeroize()
-	}
 	s.HostKey = nil
 	s.Pubnonce = nil
 }
 
 // FROSTDKGEncParticipantRound1WithHostKey performs encrypted round 1 using HostKey.
+//
+// The caller retains ownership of hostKey. The returned state borrows it for
+// the duration of the ceremony and never destroys it, so the caller is the one
+// that must Zeroize the key when the key itself — not this session — is done.
+// A host key is a long-lived identity key: the same key signs both steps of a
+// ceremony and typically outlives many of them.
 func FROSTDKGEncParticipantRound1WithHostKey(
 	cs ciphersuite.Ciphersuite,
 	seed []byte,
@@ -1633,6 +1642,9 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 // =============================================================================
 
 // FROSTDKGFullParticipantStateHK1 holds state after round 1 with HostKey.
+//
+// HostKey is borrowed, not owned: see the ownership rule on
+// FROSTDKGEncParticipantRound1WithHostKey.
 type FROSTDKGFullParticipantStateHK1 struct {
 	EncState    *FROSTDKGEncParticipantStateHK
 	HostKey     HostKey
@@ -1641,7 +1653,9 @@ type FROSTDKGFullParticipantStateHK1 struct {
 }
 
 // Zeroize clears sensitive data from the state.
-// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
+//
+// The HostKey is BORROWED from the caller, so Zeroize drops the reference
+// without destroying the key — see FROSTDKGEncParticipantStateHK.Zeroize.
 func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 	if s == nil {
 		return
@@ -1650,13 +1664,13 @@ func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 		s.EncState.Zeroize()
 	}
 	s.EncState = nil
-	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
-		sk.Zeroize()
-	}
 	s.HostKey = nil
 }
 
 // FROSTDKGFullParticipantStateHK2 holds state after round 2 with HostKey.
+//
+// HostKey is the same borrowed key state 1 carried, not a copy: see the
+// ownership rule on FROSTDKGEncParticipantRound1WithHostKey.
 type FROSTDKGFullParticipantStateHK2 struct {
 	Output      *FROSTDKGOutput
 	EqInput     []byte
@@ -1668,7 +1682,9 @@ type FROSTDKGFullParticipantStateHK2 struct {
 }
 
 // Zeroize clears sensitive data from the state.
-// If the HostKey is a *SoftwareHostKey, its secret material is also zeroized.
+//
+// The HostKey is BORROWED from the caller, so Zeroize drops the reference
+// without destroying the key — see FROSTDKGEncParticipantStateHK.Zeroize.
 func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 	if s == nil {
 		return
@@ -1677,13 +1693,13 @@ func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 		s.Output.Zeroize()
 	}
 	s.Output = nil
-	if sk, ok := s.HostKey.(*SoftwareHostKey); ok {
-		sk.Zeroize()
-	}
 	s.HostKey = nil
 }
 
 // FROSTDKGFullParticipantStep1WithHostKey performs the first step using HostKey.
+//
+// The caller retains ownership of hostKey; the returned state only borrows it.
+// See FROSTDKGEncParticipantRound1WithHostKey for the ownership rule.
 func FROSTDKGFullParticipantStep1WithHostKey(
 	cs ciphersuite.Ciphersuite,
 	hostKey HostKey,
