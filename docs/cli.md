@@ -53,7 +53,7 @@ These flags apply to all commands and configure transport, security, and output:
 | `FROST-ED25519-SHA512-v1` | 32 bytes |
 | `FROST-RISTRETTO255-SHA512-v1` | 32 bytes |
 | `FROST-P256-SHA256-v1` | 33 bytes (compressed) |
-| `FROST-SECP256K1-SHA256-v1` | 33 bytes (compressed) |
+| `FROST-secp256k1-SHA256-v1` | 33 bytes (compressed) |
 | `FROST-ED448-SHAKE256-v1` | 57 bytes |
 
 ## Commands

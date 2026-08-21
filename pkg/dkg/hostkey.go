@@ -27,6 +27,7 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed25519_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ed448_shake256"
+	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/p256_sha256"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/ristretto255_sha512"
 	"github.com/jeremyhahn/go-frost/pkg/frost/ciphersuite/secp256k1_sha256"
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
@@ -530,18 +531,36 @@ func verifySchnorrSignature(cs ciphersuite.Ciphersuite, grp group.Group, publicK
 	return nil
 }
 
-// Helper to get ciphersuite from ID for verification
-func getCiphersuiteByID(id string) ciphersuite.Ciphersuite {
+// CiphersuiteByID returns the ciphersuite named by a FROST ciphersuite
+// identifier, or ErrUnknownCiphersuite if the identifier names none.
+//
+// The identifiers are wire values that arrive from configuration, a command
+// line, or a peer's session-info message, so resolving one is a normal need
+// outside this package — and doing it locally is how a caller ends up with a
+// second copy of the strings and, eventually, a copy that has drifted.
+func CiphersuiteByID(id string) (ciphersuite.Ciphersuite, error) {
 	switch id {
+	case CiphersuiteP256:
+		return p256_sha256.New(), nil
 	case CiphersuiteEd25519:
-		return ed25519_sha512.New()
+		return ed25519_sha512.New(), nil
 	case CiphersuiteRistretto255:
-		return ristretto255_sha512.New()
+		return ristretto255_sha512.New(), nil
 	case CiphersuiteEd448:
-		return ed448_shake256.New()
+		return ed448_shake256.New(), nil
 	case CiphersuiteSecp256k1:
-		return secp256k1_sha256.New()
+		return secp256k1_sha256.New(), nil
 	default:
+		return nil, ErrUnknownCiphersuite
+	}
+}
+
+// Helper to get ciphersuite from ID for verification. Returns nil rather than
+// an error for the call sites that only branch on support.
+func getCiphersuiteByID(id string) ciphersuite.Ciphersuite {
+	cs, err := CiphersuiteByID(id)
+	if err != nil {
 		return nil
 	}
+	return cs
 }

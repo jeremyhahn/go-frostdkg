@@ -79,7 +79,7 @@ func TestProtocolParity_2of3_Threshold(t *testing.T) {
 
     for _, tc := range testCases {
         t.Run(tc.name, func(t *testing.T) {
-            runDKGTest(t, 2, 3, "FROST-SECP256K1-SHA256-v1", tc.factory)
+            runDKGTest(t, 2, 3, "FROST-secp256k1-SHA256-v1", tc.factory)
         })
     }
 }
@@ -165,8 +165,8 @@ func TestMyTransport(t *testing.T) {
     hostSeckeys, hostPubkeys, _ := api.GenerateHostKeys(3)
 
     // Create coordinator and participants
-    coord, address, _ := api.CreateGRPCCoordinator(sessionID, 2, 3, "FROST-SECP256K1-SHA256-v1", certs)
-    participants, _ := api.CreateGRPCParticipants(3, certs, "FROST-SECP256K1-SHA256-v1")
+    coord, address, _ := api.CreateGRPCCoordinator(sessionID, 2, 3, "FROST-secp256k1-SHA256-v1", certs)
+    participants, _ := api.CreateGRPCParticipants(3, certs, "FROST-secp256k1-SHA256-v1")
 
     // Register cleanup
     cleanup.AddCoordinator(coord)

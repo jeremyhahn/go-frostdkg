@@ -546,15 +546,18 @@ func TestP256SignWithCustomRNG(t *testing.T) {
 
 // TestGetCiphersuiteByID tests the getCiphersuiteByID function.
 func TestGetCiphersuiteByID(t *testing.T) {
+	// Every supported ciphersuite must resolve, named by its constant rather
+	// than a second copy of the literal. P256 used to be missing from the
+	// switch — the one FIPS-approved suite, returning nil into verification.
 	testCases := []struct {
 		id       string
 		expected bool
 	}{
-		{"FROST-ED25519-SHA512-v1", true},
-		{"FROST-RISTRETTO255-SHA512-v1", true},
-		{"FROST-ED448-SHAKE256-v1", true},
-		{"FROST-secp256k1-SHA256-v1", true},
-		{"FROST-P256-SHA256-v1", false}, // P256 not in the ID map
+		{CiphersuiteEd25519, true},
+		{CiphersuiteRistretto255, true},
+		{CiphersuiteEd448, true},
+		{CiphersuiteSecp256k1, true},
+		{CiphersuiteP256, true},
 		{"invalid-id", false},
 		{"", false},
 	}
@@ -567,6 +570,9 @@ func TestGetCiphersuiteByID(t *testing.T) {
 			}
 			if !tc.expected && cs != nil {
 				t.Errorf("Expected nil for %s, got ciphersuite", tc.id)
+			}
+			if tc.expected && cs != nil && cs.ID() != tc.id {
+				t.Errorf("Expected ciphersuite %s, got %s", tc.id, cs.ID())
 			}
 		})
 	}

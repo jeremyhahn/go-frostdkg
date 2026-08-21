@@ -8,7 +8,7 @@ Integration tests run in Docker containers and perform complete E2E testing with
 
 1. **FROST-DKG Protocol**: Full distributed key generation with all 5 compatible ciphersuites
    - FROST-ED25519-SHA512-v1
-   - FROST-SECP256K1-SHA256-v1
+   - FROST-secp256k1-SHA256-v1
    - FROST-P256-SHA256-v1
    - FROST-ED25519-SHA512-v1
    - FROST-RISTRETTO255-SHA512-v1

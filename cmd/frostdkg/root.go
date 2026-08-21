@@ -19,7 +19,9 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"strings"
 
+	"github.com/jeremyhahn/go-frostdkg/pkg/dkg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -50,13 +52,19 @@ var (
 	insecure    bool
 )
 
-// Ciphersuite constants
+// Ciphersuite constants, aliased from the package that owns them.
+//
+// These were literals until the secp256k1 one drifted: the CLI spelled it
+// FROST-SECP256K1-SHA256-v1 while RFC 9591 and dkg.CiphersuiteSecp256k1 spell
+// it FROST-secp256k1-SHA256-v1, so selecting secp256k1 from the command line
+// resolved to nothing. A second copy of a wire identifier cannot be kept
+// correct by discipline; aliasing makes drift impossible.
 const (
-	CiphersuiteEd25519      = "FROST-ED25519-SHA512-v1"
-	CiphersuiteRistretto255 = "FROST-RISTRETTO255-SHA512-v1"
-	CiphersuiteP256         = "FROST-P256-SHA256-v1"
-	CiphersuiteSecp256k1    = "FROST-SECP256K1-SHA256-v1"
-	CiphersuiteEd448        = "FROST-ED448-SHAKE256-v1"
+	CiphersuiteEd25519      = dkg.CiphersuiteEd25519
+	CiphersuiteRistretto255 = dkg.CiphersuiteRistretto255
+	CiphersuiteP256         = dkg.CiphersuiteP256
+	CiphersuiteSecp256k1    = dkg.CiphersuiteSecp256k1
+	CiphersuiteEd448        = dkg.CiphersuiteEd448
 )
 
 // CiphersuiteKeySize returns the public key size for a given ciphersuite
@@ -138,7 +146,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: $HOME/.frostdkg/config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&protocol, "protocol", "grpc", "transport protocol (grpc, http, quic, unix, libp2p)")
 	rootCmd.PersistentFlags().StringVar(&codec, "codec", "json", "serialization format (json, msgpack, cbor)")
-	rootCmd.PersistentFlags().StringVar(&ciphersuite, "ciphersuite", CiphersuiteEd25519, "FROST ciphersuite (FROST-ED25519-SHA512-v1, FROST-RISTRETTO255-SHA512-v1, FROST-P256-SHA256-v1, FROST-SECP256K1-SHA256-v1, FROST-ED448-SHAKE256-v1)")
+	// The help text lists the identifiers rather than repeating them: what a
+	// user copies out of --help has to be a string the flag actually accepts.
+	rootCmd.PersistentFlags().StringVar(&ciphersuite, "ciphersuite", CiphersuiteEd25519,
+		fmt.Sprintf("FROST ciphersuite (%s)", strings.Join(ValidCiphersuites(), ", ")))
 	rootCmd.PersistentFlags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file path")
 	rootCmd.PersistentFlags().StringVar(&tlsKey, "tls-key", "", "TLS private key file path")
 	rootCmd.PersistentFlags().StringVar(&tlsCA, "tls-ca", "", "CA certificate for mTLS (optional)")
