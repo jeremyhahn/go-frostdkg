@@ -3056,8 +3056,33 @@ func TestUnixServerParticipantStreamShutdown(t *testing.T) {
 		t.Fatalf("failed to create stream: %v", err)
 	}
 
-	// Stop server while stream is active
-	_ = server.Stop(context.Background())
+	// Stop the server while the stream is active, with a BOUNDED context.
+	//
+	// Coordinator.Stop is documented to wait "for active sessions to complete
+	// or context timeout", so context.Background() means wait forever -- and
+	// this test deliberately leaves a stream open that nothing will ever
+	// complete. GracefulStop then blocks on that RPC, the handler is parked in
+	// stream.Recv() and cannot see the closed shutdownChan, and Stop's select
+	// has no other arm: context.Background().Done() is nil, which blocks
+	// forever. That deadlocked main at adb114ce (run 5391, 5-minute timeout).
+	//
+	// A deadline gives Stop the forceful arm it needs: server.Stop() cancels
+	// the active RPC, the handler's Recv errors out, and shutdown completes --
+	// which is also what makes the assertion below meaningful.
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- server.Stop(stopCtx) }()
+
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatalf("Stop returned an error: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Stop did not return: it is waiting on an RPC that will never complete")
+	}
 
 	// Stream should get error
 	_, err = stream.Recv()
