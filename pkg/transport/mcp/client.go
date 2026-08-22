@@ -124,11 +124,11 @@ func (c *MCPClient) validateDKGParams(params *transport.DKGParams) error {
 		return transport.ErrInvalidDKGParams
 	}
 
-	if len(params.HostSeckey) != 32 {
+	if params.HostSeckey.Size() != 32 {
 		return transport.ErrInvalidHostKey
 	}
 
-	if len(params.Random) != 32 {
+	if params.Random.Size() != 32 {
 		return transport.ErrInvalidRandomness
 	}
 

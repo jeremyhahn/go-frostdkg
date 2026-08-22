@@ -19,11 +19,23 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 func main() {
+	// Bring up the secure-memory subsystem before anything can allocate a
+	// secret. Init installs an interrupt handler that purges every enclave on
+	// a termination signal, which is the only thing standing between a
+	// Ctrl-C and key material left in a core dump.
+	secmem.Init()
+
+	// Purge, not defer-and-hope: os.Exit below skips deferred calls, so the
+	// error path purges explicitly before exiting.
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		secmem.Purge()
 		os.Exit(1)
 	}
+	secmem.Purge()
 }

@@ -324,17 +324,30 @@ if err := client.Connect(ctx, "localhost:9000"); err != nil {
 defer client.Disconnect()
 
 params := &transport.DKGParams{
-    HostSeckey:     hostSeckey,     // 32 bytes
-    HostPubkeys:    hostPubkeys,    // n x 32 bytes
+    // Secrets are sealed in a memguard enclave, never a plain []byte.
+    // SealSecret copies, so hostSeckey is left intact; use
+    // secmem.NewSecretBytes instead when you want your source slice zeroed
+    // as it is taken.
+    HostSeckey:     transport.SealSecret(hostSeckey), // 32 bytes
+    HostPubkeys:    hostPubkeys,                      // n x 32 bytes
     Threshold:      2,
     ParticipantIdx: 0,
-    Random:         randomness,     // 32 bytes
+    Random:         transport.SealSecret(randomness), // 32 bytes, also a secret
 }
+defer params.Zeroize() // destroys BOTH sealed inputs
 
 result, err := client.RunDKG(ctx, params)
 if err != nil {
     log.Fatal(err)
 }
+defer result.Zeroize() // destroys the sealed share
 
 fmt.Printf("Threshold Key: %x\n", result.ThresholdPubkey)
+
+// The share is read inside a borrow window and must not outlive it.
+if err := secmem.WithSecret(result.SecretShare, func(share []byte) error {
+    return persist(share)
+}); err != nil {
+    log.Fatal(err)
+}
 ```

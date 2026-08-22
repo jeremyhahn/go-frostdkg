@@ -20,6 +20,7 @@ import (
 	"crypto/subtle"
 
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
 // Ciphersuite ID constants for supported FROST ciphersuites per RFC 9591.
@@ -98,4 +99,22 @@ func xorBytes(a, b []byte) []byte {
 		result[i] = a[i] ^ b[i]
 	}
 	return result
+}
+
+// sealCopy seals a copy of secret material in a memguard enclave.
+//
+// It copies deliberately. secmem.NewSecretBytes zeroes the slice it is handed,
+// so sealing the caller's slice directly would wipe memory the caller still
+// owns — the borrow-vs-own rule that already governs HostKey. Copying keeps
+// the state's secret and the caller's slice independent, so the state can own
+// (and destroy) its own copy.
+//
+// Returns nil for empty input, matching secmem.NewSecretBytes.
+func sealCopy(secret []byte) *secmem.SecretBytes {
+	if len(secret) == 0 {
+		return nil
+	}
+	c := make([]byte, len(secret))
+	copy(c, secret)
+	return secmem.NewSecretBytes(c)
 }

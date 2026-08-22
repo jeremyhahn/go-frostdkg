@@ -27,8 +27,10 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
 )
 
@@ -228,8 +230,8 @@ func (a *VerifyResultAction) Execute(ctx context.Context) error {
 		return fmt.Errorf("session ID mismatch: got %s, want %s", a.Result.SessionID, a.ExpectedSession)
 	}
 
-	if len(a.Result.SecretShare) != transport.SecretKeySize {
-		return fmt.Errorf("invalid secret share length: got %d, want %d", len(a.Result.SecretShare), transport.SecretKeySize)
+	if a.Result.SecretShare.Size() != transport.SecretKeySize {
+		return fmt.Errorf("invalid secret share length: got %d, want %d", a.Result.SecretShare.Size(), transport.SecretKeySize)
 	}
 
 	if len(a.Result.ThresholdPubkey) != transport.PublicKeySize {
@@ -316,14 +318,17 @@ func (a *CompareResultsAction) Execute(ctx context.Context) error {
 			}
 		}
 
-		// Secret shares should be DIFFERENT (each participant has their own)
-		if len(result.SecretShare) == len(first.SecretShare) {
+		// Secret shares should be DIFFERENT (each participant has their own).
+		// Both enclaves are opened only for the length of the comparison.
+		if result.SecretShare.Size() == first.SecretShare.Size() {
 			allMatch := true
-			for j := range result.SecretShare {
-				if result.SecretShare[j] != first.SecretShare[j] {
-					allMatch = false
-					break
-				}
+			if err := secmem.WithSecret(result.SecretShare, func(mine []byte) error {
+				return secmem.WithSecret(first.SecretShare, func(theirs []byte) error {
+					allMatch = subtle.ConstantTimeCompare(mine, theirs) == 1
+					return nil
+				})
+			}); err != nil {
+				return fmt.Errorf("result %d: could not read secret shares: %w", i+1, err)
 			}
 			if allMatch && i > 0 {
 				return fmt.Errorf("result %d: secret shares should differ between participants", i+1)

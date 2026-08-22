@@ -737,11 +737,11 @@ func TestValidateParams(t *testing.T) {
 		{
 			name: "valid parameters",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      2,
 				ParticipantIdx: 0,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: false,
 		},
@@ -753,77 +753,77 @@ func TestValidateParams(t *testing.T) {
 		{
 			name: "invalid host seckey length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 16),
+				HostSeckey:     transport.SealSecret(make([]byte, 16)),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      2,
 				ParticipantIdx: 0,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid random length",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      2,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 16),
+				Random:         transport.SealSecret(make([]byte, 16)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid threshold (too low)",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      0,
 				ParticipantIdx: 0,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid threshold (too high)",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      5,
 				ParticipantIdx: 0,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid participant index (negative)",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      2,
 				ParticipantIdx: -1,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid participant index (too high)",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    validHostPubkeys,
 				Threshold:      2,
 				ParticipantIdx: 5,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid host pubkey size",
 			params: &transport.DKGParams{
-				HostSeckey:     validHostSeckey,
+				HostSeckey:     transport.SealSecret(validHostSeckey),
 				HostPubkeys:    [][]byte{make([]byte, 16)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         validRandom,
+				Random:         transport.SealSecret(validRandom),
 			},
 			expectError: true,
 		},
@@ -1053,19 +1053,19 @@ func TestJoinSession(t *testing.T) {
 	}
 
 	params1 := &transport.DKGParams{
-		HostSeckey:     hostSeckey1,
+		HostSeckey:     transport.SealSecret(hostSeckey1),
 		HostPubkeys:    [][]byte{hostPubkey1, hostPubkey2},
 		Threshold:      2,
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	params2 := &transport.DKGParams{
-		HostSeckey:     hostSeckey2,
+		HostSeckey:     transport.SealSecret(hostSeckey2),
 		HostPubkeys:    [][]byte{hostPubkey1, hostPubkey2},
 		Threshold:      2,
 		ParticipantIdx: 1,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	// Test first participant joining
@@ -1123,11 +1123,11 @@ func TestJoinSession(t *testing.T) {
 	defer func() { _ = client3.Disconnect() }()
 
 	params3 := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	_, err = client3.joinSession(ctx, params3)
@@ -1214,19 +1214,19 @@ func TestRunDKG(t *testing.T) {
 	}
 
 	params1 := &transport.DKGParams{
-		HostSeckey:     hostSeckey1,
+		HostSeckey:     transport.SealSecret(hostSeckey1),
 		HostPubkeys:    [][]byte{hostPubkey1, hostPubkey2},
 		Threshold:      2,
 		ParticipantIdx: 0,
-		Random:         randomBytes1,
+		Random:         transport.SealSecret(randomBytes1),
 	}
 
 	params2 := &transport.DKGParams{
-		HostSeckey:     hostSeckey2,
+		HostSeckey:     transport.SealSecret(hostSeckey2),
 		HostPubkeys:    [][]byte{hostPubkey1, hostPubkey2},
 		Threshold:      2,
 		ParticipantIdx: 1,
-		Random:         randomBytes2,
+		Random:         transport.SealSecret(randomBytes2),
 	}
 
 	// Test participant 1
@@ -1450,7 +1450,7 @@ func TestRound1Workflow(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	// Test Round1 execution with timeout - should get error polling for results
@@ -1541,7 +1541,7 @@ func TestRound2Workflow(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	round1Agg := &transport.Round1AggMessage{
@@ -1626,7 +1626,7 @@ func TestCertEqWorkflow(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	// Test CertEq submission
@@ -2119,7 +2119,7 @@ func TestRound1Complete(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	// Test Round1 execution - should succeed now
@@ -2214,7 +2214,7 @@ func TestRound2Complete(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	round1Agg := &transport.Round1AggMessage{
@@ -2811,11 +2811,11 @@ func TestRunDKGInvalidParams(t *testing.T) {
 
 	// Test with invalid params
 	badParams := &transport.DKGParams{
-		HostSeckey:     make([]byte, 16), // Invalid length
+		HostSeckey:     transport.SealSecret(make([]byte, 16)), // Invalid length
 		HostPubkeys:    nil,
 		Threshold:      0,
 		ParticipantIdx: -1,
-		Random:         nil,
+		Random:         transport.SealSecret(nil),
 	}
 
 	_, err = client.RunDKG(ctx, badParams)
@@ -2868,11 +2868,11 @@ func TestJoinSessionError(t *testing.T) {
 
 	// First join should succeed
 	params1 := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.joinSession(ctx, params1)
@@ -2892,11 +2892,11 @@ func TestJoinSessionError(t *testing.T) {
 	defer func() { _ = client2.Disconnect() }()
 
 	params2 := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client2.joinSession(ctx, params2)
@@ -2971,7 +2971,7 @@ func TestExecuteRound1Success(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	// Execute Round1 - should succeed immediately
@@ -3051,7 +3051,7 @@ func TestExecuteRound2Success(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	round1Agg := &transport.Round1AggMessage{
@@ -3553,11 +3553,11 @@ func TestRunDKGValidParams(t *testing.T) {
 	}
 
 	params := &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      2,
 		ParticipantIdx: 0,
-		Random:         randomBytes,
+		Random:         transport.SealSecret(randomBytes),
 	}
 
 	// Run DKG - will succeed up to joining
@@ -3679,11 +3679,11 @@ func TestJoinSessionMarshallingFormats(t *testing.T) {
 			}
 
 			params := &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{hostPubkey},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			}
 
 			_, err = client.joinSession(ctx, params)
@@ -4363,7 +4363,7 @@ func TestExecuteRound1ErrorDuringGet(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.executeRound1(ctx, params, sessionInfo)
@@ -4428,7 +4428,7 @@ func TestExecuteRound2ErrorDuringGet(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	round1Agg := &transport.Round1AggMessage{}
@@ -4475,7 +4475,7 @@ func TestJoinSessionUnmarshalError(t *testing.T) {
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.joinSession(context.Background(), params)
@@ -4538,7 +4538,7 @@ func TestExecuteRound1WithCancelledContext(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	// Create already cancelled context
@@ -4606,7 +4606,7 @@ func TestExecuteRound2WithCancelledContext(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	round1Agg := &transport.Round1AggMessage{}
@@ -4725,7 +4725,7 @@ func TestExecuteRound1UnmarshalError(t *testing.T) {
 
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.executeRound1(context.Background(), params, sessionInfo)
@@ -4819,7 +4819,7 @@ func TestJoinSessionJoinError(t *testing.T) {
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.joinSession(context.Background(), params)
@@ -4873,7 +4873,7 @@ func TestJoinSessionUnmarshalJoinResponse(t *testing.T) {
 	params := &transport.DKGParams{
 		ParticipantIdx: 0,
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.joinSession(context.Background(), params)

@@ -628,11 +628,11 @@ func TestMCPClientRunDKGFlow(t *testing.T) {
 	defer func() { _ = client.Disconnect() }()
 
 	params := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize), make([]byte, transport.PublicKeySize)},
 		Threshold:      2,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	// The join leg above is real and must still succeed; the ceremony is not

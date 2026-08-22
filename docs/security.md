@@ -150,6 +150,68 @@ defer output.ZeroizeWithGroup(cs.Group())
 dkg.ZeroBytes(secretKey)
 ```
 
+### Secrets live in enclaves, not in `[]byte`
+
+These are sealed in a `secmem.SecretBytes` — encrypted at rest with memguard's
+Enclave, decrypted into `mlock`'d memory only for the moment an operation needs
+them:
+
+| Secret | Where |
+|---|---|
+| Host secret key | `SoftwareHostKey` (unexported), `DKGParams.HostSeckey` |
+| Session randomness | `DKGParams.Random` |
+| Participant session seed | `FROSTDKGParticipantState.Seed` |
+| Host key held by DKG state | `FROSTDKGEncParticipantState.HostSeckey`, `FROSTDKGFullParticipantState1.HostSeckey` |
+| Resulting secret share | `DKGResult.SecretShare` |
+
+A plain `[]byte` field would sit on the swappable heap for the whole life of the
+key, which is what a `ZeroBytes` at the end cannot undo.
+
+`DKGParams.Random` is on that list because it is a **secret, not a nonce**:
+combined with the host key it derives the participant seed, so anyone holding
+both can reproduce the share.
+
+Reading one is a borrow window, and the bytes must not outlive it:
+
+```go
+if err := secmem.WithSecret(result.SecretShare, func(share []byte) error {
+    return persist(share) // do not retain `share` past this callback
+}); err != nil { /* ... */ }
+```
+
+Build one with `transport.SealSecret` (or `dkg`'s internal `sealCopy`), which
+copies before sealing. `secmem.NewSecretBytes` zeroes the slice it is handed —
+use it directly only when destroying your source buffer is what you want.
+
+Releasing a secret **destroys** the enclave rather than zeroing a slice that
+still exists: `DKGParams.Zeroize`, `DKGResult.Zeroize`, and the DKG state
+`Zeroize` methods all do this for the secrets they own.
+
+#### What is deliberately NOT in an enclave
+
+Stated so the list above can be audited rather than assumed:
+
+- **`FROSTDKGOutput.SecretShare`** is a `group.Scalar`. `secmem`'s own package
+  documentation excludes scalars — they are managed by external crypto
+  libraries and cannot be wrapped. It is zeroized through the group API
+  instead.
+- **`SoftwareHostKey.SecretKey()`** returns a plain `[]byte` on purpose, because
+  `HostKeyGenerator.LoadHostKey` defines software keys as exportable and
+  persisting a key needs it. It is the one documented way out of protected
+  memory: the caller owns that exposure and must `ZeroBytes` the result as soon
+  as it is consumed. Whether the export should exist at all is an open
+  question.
+- **`SecretPackage` and `SecureScalar`** (`pkg/dkg/zeroize.go`) still hold
+  plain `[]byte`. They are exported but unused — no caller anywhere in this
+  repository — and removing exported symbols is not a change to make in
+  passing. Tracked as issue #25.
+- **Hex-encoded key material in the CLI's output file** is a `string` on its way
+  to disk. Strings cannot be scrubbed soundly, so the exposure is the file's
+  `0600` mode, not the in-memory copy.
+
+Anything not on either list is public: host public keys, the threshold public
+key, public shares, and `DKGResult.RecoveryData`.
+
 **A borrower never wipes what it borrowed.** A `HostKey` passed into any of
 the `*WithHostKey` entry points stays owned by the caller: the DKG state holds
 a reference for the ceremony and its `Zeroize()` only drops that reference.

@@ -89,11 +89,11 @@ func generateTestParams(n, t, idx int) *transport.DKGParams {
 	}
 
 	return &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      t,
 		ParticipantIdx: idx,
-		Random:         random,
+		Random:         transport.SealSecret(random),
 	}
 }
 
@@ -617,55 +617,55 @@ func TestGRPCClientValidateParams(t *testing.T) {
 		{
 			name: "invalid host seckey length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 16),
+				HostSeckey:     transport.SealSecret(make([]byte, 16)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid randomness length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 16),
+				Random:         transport.SealSecret(make([]byte, 16)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid participant index",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 5,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid threshold",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      0,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid host pubkey length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, 16)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
@@ -1018,77 +1018,77 @@ func TestUnixClientValidateParams(t *testing.T) {
 		{
 			name: "invalid host seckey length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 16),
+				HostSeckey:     transport.SealSecret(make([]byte, 16)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid randomness length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 16),
+				Random:         transport.SealSecret(make([]byte, 16)),
 			},
 			expectError: true,
 		},
 		{
 			name: "negative participant index",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: -1,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "participant index out of range",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 5,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "threshold too low",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      0,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "threshold too high",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      5,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
 		{
 			name: "invalid host pubkey length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
 				HostPubkeys:    [][]byte{make([]byte, 16)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         transport.SealSecret(make([]byte, 32)),
 			},
 			expectError: true,
 		},
@@ -2591,11 +2591,11 @@ func TestGRPCClientRunDKGInvalidParams(t *testing.T) {
 
 	// Try RunDKG with invalid params
 	invalidParams := &transport.DKGParams{
-		HostSeckey:     make([]byte, 16), // Wrong size
+		HostSeckey:     transport.SealSecret(make([]byte, 16)), // Wrong size
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.RunDKG(ctx, invalidParams)
@@ -3230,11 +3230,11 @@ func TestUnixClientRunDKGInvalidParams(t *testing.T) {
 
 	// Try RunDKG with invalid params
 	invalidParams := &transport.DKGParams{
-		HostSeckey:     make([]byte, 16), // Wrong size
+		HostSeckey:     transport.SealSecret(make([]byte, 16)), // Wrong size
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.RunDKG(ctx, invalidParams)

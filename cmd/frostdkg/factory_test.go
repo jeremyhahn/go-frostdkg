@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport/libp2p"
 	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
@@ -303,7 +304,7 @@ func TestRunParticipantWithMock(t *testing.T) {
 
 	// Create expected DKG result
 	expectedResult := &transport.DKGResult{
-		SecretShare:     []byte("test-secret-share-32-bytes-long!"),
+		SecretShare:     transport.SealSecret([]byte("test-secret-share-32-bytes-long!")),
 		ThresholdPubkey: []byte("test-threshold-pubkey-32-bytes!!"),
 		PublicShares: [][]byte{
 			[]byte("test-public-share-1-32-bytes!!!!"),
@@ -315,7 +316,11 @@ func TestRunParticipantWithMock(t *testing.T) {
 	}
 
 	// Pre-compute expected hex values before runParticipant zeroes the result bytes
-	expectedSecretShareHex := hex.EncodeToString(expectedResult.SecretShare)
+	var expectedSecretShareHex string
+	require.NoError(t, secmem.WithSecret(expectedResult.SecretShare, func(share []byte) error {
+		expectedSecretShareHex = hex.EncodeToString(share)
+		return nil
+	}))
 	expectedThresholdPubkeyHex := hex.EncodeToString(expectedResult.ThresholdPubkey)
 
 	// Setup expectations
@@ -651,7 +656,7 @@ func TestRunParticipantWithHostkey(t *testing.T) {
 	verbose = false
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -730,7 +735,7 @@ func TestRunParticipantWithVerbose(t *testing.T) {
 	defer func() { verbose = false }()
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -853,7 +858,7 @@ func TestRunParticipantDisconnectError(t *testing.T) {
 	verbose = false
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -893,7 +898,7 @@ func TestRunParticipantWriteFileError(t *testing.T) {
 	insecure = true
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -1097,7 +1102,7 @@ func TestRunParticipantWithTLSPathsAndVerbose(t *testing.T) {
 	}()
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -1164,7 +1169,7 @@ func TestRunParticipantAllProtocolsWithMocks(t *testing.T) {
 			verbose = false
 
 			expectedResult := &transport.DKGResult{
-				SecretShare:     make([]byte, 32),
+				SecretShare:     transport.SealSecret(make([]byte, 32)),
 				ThresholdPubkey: make([]byte, 32),
 				PublicShares:    [][]byte{make([]byte, 32)},
 				SessionID:       "test",
@@ -1536,7 +1541,7 @@ func TestRunParticipantVerboseWithHostkeyGeneration(t *testing.T) {
 	defer func() { verbose = false }()
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 32),
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "test",
@@ -1578,7 +1583,7 @@ func TestRunParticipantVerboseConnectedAndDKGComplete(t *testing.T) {
 	defer func() { verbose = false }()
 
 	expectedResult := &transport.DKGResult{
-		SecretShare:     make([]byte, 32),
+		SecretShare:     transport.SealSecret(make([]byte, 32)),
 		ThresholdPubkey: make([]byte, 33), // 33-byte compressed key for verbose output
 		PublicShares:    [][]byte{make([]byte, 32)},
 		SessionID:       "verbose-test-session",

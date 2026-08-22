@@ -543,7 +543,7 @@ func TestGRPCClient_RunDKG_ErrorPaths(t *testing.T) {
 		client.connected.Store(true)
 
 		invalidParams := &transport.DKGParams{
-			HostSeckey:     make([]byte, 10), // Invalid length
+			HostSeckey:     transport.SealSecret(make([]byte, 10)), // Invalid length
 			ParticipantIdx: 0,
 		}
 		ctx := context.Background()

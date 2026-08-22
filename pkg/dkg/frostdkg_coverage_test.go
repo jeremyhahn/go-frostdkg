@@ -1096,7 +1096,7 @@ func TestFROSTDKGFullParticipantStep2Errors(t *testing.T) {
 		invalidState := &FROSTDKGFullParticipantState1{
 			EncState:    states1[0].EncState,
 			Signer:      states1[0].Signer,
-			HostSeckey:  []byte{0x01, 0x02, 0x03}, // Invalid length
+			HostSeckey:  sealCopy([]byte{0x01, 0x02, 0x03}), // Invalid length
 			HostPubkeys: states1[0].HostPubkeys,
 		}
 

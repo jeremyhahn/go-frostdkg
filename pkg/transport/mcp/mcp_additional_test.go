@@ -757,11 +757,11 @@ func TestMCPClientRunDKGNotConnected(t *testing.T) {
 
 	ctx := context.Background()
 	params := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	_, err = client.RunDKG(ctx, params)

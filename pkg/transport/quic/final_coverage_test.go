@@ -260,8 +260,8 @@ func TestQUICValidateParamsInvalidPubkeySize(t *testing.T) {
 	client := finalCreateClient(t)
 
 	params := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
-		Random:         make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
+		Random:         transport.SealSecret(make([]byte, 32)),
 		ParticipantIdx: 0,
 		HostPubkeys:    [][]byte{make([]byte, 16)}, // Wrong size
 		Threshold:      1,
@@ -381,11 +381,11 @@ func finalCreateDKGParams(t *testing.T, idx, numParticipants, threshold int) *tr
 	}
 
 	return &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      threshold,
 		ParticipantIdx: idx,
-		Random:         randomness,
+		Random:         transport.SealSecret(randomness),
 	}
 }
 

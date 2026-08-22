@@ -523,11 +523,11 @@ func TestMCPClientValidatePubkeyLength(t *testing.T) {
 	}
 
 	params := &transport.DKGParams{
-		HostSeckey:     make([]byte, 32),
+		HostSeckey:     transport.SealSecret(make([]byte, 32)),
 		HostPubkeys:    [][]byte{make([]byte, 16)}, // Wrong length
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         transport.SealSecret(make([]byte, 32)),
 	}
 
 	err = client.validateDKGParams(params)

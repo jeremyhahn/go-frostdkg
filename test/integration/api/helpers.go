@@ -123,11 +123,11 @@ func GenerateDKGParams(
 	}
 
 	return &transport.DKGParams{
-		HostSeckey:     hostSeckeys[participantIdx],
+		HostSeckey:     transport.SealSecret(hostSeckeys[participantIdx]),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      threshold,
 		ParticipantIdx: participantIdx,
-		Random:         random,
+		Random:         transport.SealSecret(random),
 	}, nil
 }
 

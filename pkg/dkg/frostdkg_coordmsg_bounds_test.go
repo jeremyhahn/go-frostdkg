@@ -38,7 +38,7 @@ func TestFROSTDKGEncParticipantRound2_ShortPubnoncesIsRejected(t *testing.T) {
 			Threshold:       threshold,
 			Index:           0,
 		},
-		HostSeckey:  make([]byte, scalarLen),
+		HostSeckey:  sealCopy(make([]byte, scalarLen)),
 		HostPubkeys: make([][]byte, n),
 	}
 

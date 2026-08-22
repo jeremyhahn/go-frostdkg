@@ -276,7 +276,7 @@ func testRound1Configuration(t *testing.T, cs ciphersuite.Ciphersuite, threshold
 		if state.Commitment == nil {
 			t.Error("State commitment should not be nil")
 		}
-		if len(state.Seed) != len(seed) {
+		if state.Seed.Size() != len(seed) {
 			t.Error("State seed length mismatch")
 		}
 

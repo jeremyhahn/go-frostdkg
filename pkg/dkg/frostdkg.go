@@ -163,7 +163,10 @@ type FROSTDKGParticipantState struct {
 	NumParticipants int
 	VSS             *VSS
 	Commitment      *VSSCommitment
-	Seed            []byte
+	// Seed is the participant's session seed, sealed in a memguard enclave.
+	// The state OWNS this secret -- it is created from a copy of whatever the
+	// caller supplied -- so Zeroize destroys it.
+	Seed *secmem.SecretBytes
 }
 
 // Zeroize clears sensitive data from the participant state.
@@ -172,7 +175,9 @@ func (s *FROSTDKGParticipantState) Zeroize() {
 	if s == nil {
 		return
 	}
-	ZeroBytes(s.Seed)
+	if s.Seed != nil {
+		s.Seed.Destroy()
+	}
 	s.Seed = nil
 	if s.VSS != nil {
 		s.VSS.Zeroize()
@@ -434,7 +439,7 @@ func FROSTDKGParticipantRound1(cs ciphersuite.Ciphersuite, seed []byte, t, n, in
 		NumParticipants: n,
 		VSS:             vss,
 		Commitment:      commitment,
-		Seed:            seed,
+		Seed:            sealCopy(seed),
 	}
 
 	msg := &FROSTDKGParticipantMsg{
@@ -721,7 +726,11 @@ func FROSTDKGCoordinatorOutput(cs ciphersuite.Ciphersuite, commitments []*VSSCom
 // FROSTDKGEncParticipantState holds state for encrypted FROST-DKG.
 type FROSTDKGEncParticipantState struct {
 	*FROSTDKGParticipantState
-	HostSeckey  []byte
+	// HostSeckey is the participant's host secret key, sealed in a memguard
+	// enclave. The state OWNS this secret -- it is created from a copy of
+	// whatever the caller supplied -- so Zeroize destroys it, and the caller's
+	// own slice is left alone.
+	HostSeckey  *secmem.SecretBytes
 	HostPubkeys [][]byte
 	Pubnonce    group.Element
 }
@@ -732,7 +741,9 @@ func (s *FROSTDKGEncParticipantState) Zeroize() {
 	if s == nil {
 		return
 	}
-	ZeroBytes(s.HostSeckey)
+	if s.HostSeckey != nil {
+		s.HostSeckey.Destroy()
+	}
 	s.HostSeckey = nil
 	if s.FROSTDKGParticipantState != nil {
 		s.FROSTDKGParticipantState.Zeroize()
@@ -935,7 +946,7 @@ func FROSTDKGEncParticipantRound1(
 
 	state := &FROSTDKGEncParticipantState{
 		FROSTDKGParticipantState: baseState,
-		HostSeckey:               hostSeckey,
+		HostSeckey:               sealCopy(hostSeckey),
 		HostPubkeys:              hostPubkeys,
 		Pubnonce:                 pubnonce,
 	}
@@ -1073,8 +1084,12 @@ func FROSTDKGEncParticipantRound2(
 		// Compute ECDH pad using sender's pubnonce for both positions to match encryption.
 		// The sender used (senderNonce, senderNonce) order, and with encrypt=false
 		// the order becomes (theirNonce, myNonce) = (senderNonce, senderNonce).
-		pad, err := frostDKGECDH(cs, state.HostSeckey, theirPubnonce, theirPubkey, theirPubnonce, false)
-		if err != nil {
+		var pad []byte
+		if err := secmem.WithSecret(state.HostSeckey, func(hostSeckey []byte) error {
+			var ecdhErr error
+			pad, ecdhErr = frostDKGECDH(cs, hostSeckey, theirPubnonce, theirPubkey, theirPubnonce, false)
+			return ecdhErr
+		}); err != nil {
 			return nil, nil, err
 		}
 
@@ -1104,9 +1119,11 @@ func FROSTDKGEncParticipantRound2(
 
 // FROSTDKGFullParticipantState1 holds state after round 1.
 type FROSTDKGFullParticipantState1 struct {
-	EncState    *FROSTDKGEncParticipantState
-	Signer      Signer
-	HostSeckey  []byte
+	EncState *FROSTDKGEncParticipantState
+	Signer   Signer
+	// HostSeckey is the participant's host secret key, sealed in a memguard
+	// enclave and owned by this state -- see FROSTDKGEncParticipantState.
+	HostSeckey  *secmem.SecretBytes
 	HostPubkeys [][]byte
 	Threshold   int
 }
@@ -1116,7 +1133,9 @@ func (s *FROSTDKGFullParticipantState1) Zeroize() {
 	if s == nil {
 		return
 	}
-	ZeroBytes(s.HostSeckey)
+	if s.HostSeckey != nil {
+		s.HostSeckey.Destroy()
+	}
 	s.HostSeckey = nil
 	if s.EncState != nil {
 		s.EncState.Zeroize()
@@ -1226,7 +1245,7 @@ func FROSTDKGFullParticipantStep1(
 	state := &FROSTDKGFullParticipantState1{
 		EncState:    encState,
 		Signer:      signer,
-		HostSeckey:  hostSeckey,
+		HostSeckey:  sealCopy(hostSeckey),
 		HostPubkeys: hostPubkeys,
 		Threshold:   t,
 	}
@@ -1296,8 +1315,12 @@ func FROSTDKGFullParticipantStep2(
 	}
 
 	// Sign the equality input using CertEq with session context binding
-	signature, err := CertEqParticipantStep(state1.Signer, state1.HostSeckey, index, state1.HostPubkeys, state1.Threshold, eqInput, nil)
-	if err != nil {
+	var signature []byte
+	if err := secmem.WithSecret(state1.HostSeckey, func(hostSeckey []byte) error {
+		var signErr error
+		signature, signErr = CertEqParticipantStep(state1.Signer, hostSeckey, index, state1.HostPubkeys, state1.Threshold, eqInput, nil)
+		return signErr
+	}); err != nil {
 		return nil, nil, err
 	}
 

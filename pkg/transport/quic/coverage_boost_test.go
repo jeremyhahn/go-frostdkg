@@ -466,11 +466,11 @@ func coverageCreateDKGParams(t *testing.T, idx, numParticipants, threshold int) 
 	}
 
 	return &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      threshold,
 		ParticipantIdx: idx,
-		Random:         randomness,
+		Random:         transport.SealSecret(randomness),
 	}
 }
 

@@ -39,7 +39,7 @@ func TestFROSTDKGEncParticipantStateHK_Zeroize_LeavesBorrowedHostKeyUsable(t *te
 	require.NoError(t, err)
 
 	state := &FROSTDKGEncParticipantStateHK{
-		FROSTDKGParticipantState: &FROSTDKGParticipantState{Seed: seed},
+		FROSTDKGParticipantState: &FROSTDKGParticipantState{Seed: sealCopy(seed)},
 		HostKey:                  hostKey,
 	}
 
@@ -63,7 +63,7 @@ func TestFROSTDKGFullParticipantStateHK1_Zeroize_LeavesBorrowedHostKeyUsable(t *
 
 	state := &FROSTDKGFullParticipantStateHK1{
 		EncState: &FROSTDKGEncParticipantStateHK{
-			FROSTDKGParticipantState: &FROSTDKGParticipantState{Seed: seed},
+			FROSTDKGParticipantState: &FROSTDKGParticipantState{Seed: sealCopy(seed)},
 			HostKey:                  hostKey,
 		},
 		HostKey: hostKey,

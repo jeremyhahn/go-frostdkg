@@ -120,6 +120,73 @@ type KeyShareOutput struct {
 	Timestamp        int64    `json:"timestamp"`
 }
 
+// generateSessionRandomness returns 32 bytes of CSPRNG output sealed in a
+// memguard enclave, zeroing the buffer it generated into on every path.
+//
+// Same ownership rule as loadHostSecretKey: transport.SealSecret copies rather
+// than consuming its input, so a caller that generated the buffer has to clear
+// it. The raw randomness exists only inside this function.
+func generateSessionRandomness() (*secmem.SecretBytes, error) {
+	random := make([]byte, transport.SecretKeySize)
+	defer secmem.ZeroBytes(random)
+
+	if _, err := rand.Read(random); err != nil {
+		return nil, fmt.Errorf("failed to generate randomness: %w", err)
+	}
+
+	sealed := transport.SealSecret(random)
+	if sealed == nil {
+		return nil, fmt.Errorf("failed to seal the session randomness")
+	}
+	return sealed, nil
+}
+
+// loadHostSecretKey returns the participant's host secret key sealed in a
+// memguard enclave, decoding the --hostkey flag when one was given and
+// generating a fresh key otherwise.
+//
+// The raw key exists only inside this function, and the intermediate slice is
+// zeroed on every path out. Sealing alone would not be enough:
+// transport.SealSecret deliberately COPIES rather than consuming its input —
+// the borrow rule, so that a caller holding several keys in one buffer does
+// not have the rest wiped underneath it — which means a caller that seals and
+// walks away leaves the plaintext on the ordinary heap for the life of the
+// process. Before the enclave migration the params struct aliased this slice
+// and DKGParams.Zeroize cleared it; now the params own a copy, so clearing the
+// source is this function's job.
+func loadHostSecretKey(hostkeyHex string, verbose bool) (*secmem.SecretBytes, error) {
+	var hostSeckey []byte
+
+	if hostkeyHex != "" {
+		decoded, err := hex.DecodeString(hostkeyHex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hostkey hex: %w", err)
+		}
+		hostSeckey = decoded
+		defer secmem.ZeroBytes(hostSeckey)
+
+		if len(hostSeckey) != transport.SecretKeySize {
+			return nil, fmt.Errorf("hostkey must be %d bytes, got %d", transport.SecretKeySize, len(hostSeckey))
+		}
+	} else {
+		hostSeckey = make([]byte, transport.SecretKeySize)
+		defer secmem.ZeroBytes(hostSeckey)
+
+		if _, err := rand.Read(hostSeckey); err != nil {
+			return nil, fmt.Errorf("failed to generate host secret key: %w", err)
+		}
+		if verbose {
+			fmt.Printf("Generated host secret key (fingerprint): %x\n", sha256.Sum256(hostSeckey))
+		}
+	}
+
+	sealed := transport.SealSecret(hostSeckey)
+	if sealed == nil {
+		return nil, fmt.Errorf("failed to seal the host secret key")
+	}
+	return sealed, nil
+}
+
 func runParticipant(cmd *cobra.Command, args []string) error {
 	// Validate participant ID
 	if participantID < 0 {
@@ -152,35 +219,35 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Generate or load host secret key
-	var hostSeckey []byte
-	var err error
-
-	if participantHostkey != "" {
-		hostSeckey, err = hex.DecodeString(participantHostkey)
-		if err != nil {
-			return fmt.Errorf("invalid hostkey hex: %w", err)
-		}
-		secmem.ZeroString(&participantHostkey)
-		if len(hostSeckey) != 32 {
-			return fmt.Errorf("hostkey must be 32 bytes, got %d", len(hostSeckey))
-		}
-	} else {
-		// Generate random host secret key
-		hostSeckey = make([]byte, 32)
-		if _, err := rand.Read(hostSeckey); err != nil {
-			return fmt.Errorf("failed to generate host secret key: %w", err)
-		}
-		if verbose {
-			fmt.Printf("Generated host secret key (fingerprint): %x\n", sha256.Sum256(hostSeckey))
-		}
+	// Generate or load host secret key. The raw bytes never reach this scope:
+	// see loadHostSecretKey for why sealing alone would not be enough.
+	//
+	// The --hostkey flag's own string is deliberately NOT scrubbed. Writing
+	// through a string header is unsound in both directions (go-frost#15,
+	// measured by agent-go-frost): on a literal it SEGFAULTs, and on a heap
+	// string it silently mutates every alias — and a flag value IS aliased,
+	// pflag slices it out of os.Args. Scrubbing it would also buy nothing: a
+	// key passed on the command line is already in /proc/PID/cmdline, ps
+	// output and the shell history, so the Go copy is not the exposure. The
+	// scrub that does mean something is on the decoded []byte, which
+	// loadHostSecretKey owns and zeroes.
+	hostSecret, err := loadHostSecretKey(participantHostkey, verbose)
+	if err != nil {
+		return err
 	}
+	// params.Zeroize below destroys this too; Destroy is idempotent, and this
+	// defer covers the paths that return before params exists.
+	defer hostSecret.Destroy()
 
-	// Generate random entropy for DKG
-	random := make([]byte, 32)
-	if _, err := rand.Read(random); err != nil {
-		return fmt.Errorf("failed to generate randomness: %w", err)
+	// Generate the DKG session randomness. It is sealed the same way the host
+	// key is, and for the same reason: combined with the host key it derives
+	// the participant seed, so it is a secret and not a nonce. The defer runs
+	// before params exists, covering every error return between here and there.
+	sessionRandom, err := generateSessionRandomness()
+	if err != nil {
+		return err
 	}
+	defer sessionRandom.Destroy()
 
 	// For now, we'll use placeholder host public keys
 	// In a real scenario, these would be coordinated beforehand
@@ -264,11 +331,11 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 
 	// Prepare DKG parameters
 	params := &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     hostSecret,
 		HostPubkeys:    hostPubkeys,
 		Threshold:      participantThreshold,
 		ParticipantIdx: participantID,
-		Random:         random,
+		Random:         sessionRandom,
 	}
 	defer params.Zeroize()
 
@@ -291,16 +358,34 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		publicSharesHex[i] = hex.EncodeToString(share)
 	}
 
+	// The share leaves the enclave only to be hex-encoded for the output file.
+	// Every scrub below is a defer installed the moment the value exists, so
+	// it covers the failure returns too -- an unwritable output directory used
+	// to leave the plaintext share in memory, which is the one moment it most
+	// obviously must not.
+	var secretShareHex string
+	if err := secmem.WithSecret(result.SecretShare, func(share []byte) error {
+		secretShareHex = hex.EncodeToString(share)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to read the secret share: %w", err)
+	}
+	defer secmem.ZeroString(&secretShareHex)
+
 	output := KeyShareOutput{
 		ParticipantIndex: participantID,
 		Ciphersuite:      ciphersuite,
-		SecretShare:      hex.EncodeToString(result.SecretShare),
+		SecretShare:      secretShareHex,
 		ThresholdPubkey:  hex.EncodeToString(result.ThresholdPubkey),
 		PublicShares:     publicSharesHex,
 		SessionID:        result.SessionID,
 		RecoveryData:     hex.EncodeToString(result.RecoveryData),
 		Timestamp:        time.Now().Unix(),
 	}
+	// output.SecretShare aliases secretShareHex, so either scrub clears both;
+	// both are deferred so neither depends on the other surviving a refactor.
+	defer secmem.ZeroString(&output.SecretShare)
+	defer secmem.ZeroString(&output.RecoveryData)
 
 	// Write to file
 	jsonData, err := json.MarshalIndent(output, "", "  ")
@@ -312,10 +397,6 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(participantOutput, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
-
-	// Zero remaining secret material not covered by defers
-	secmem.ZeroString(&output.SecretShare)
-	secmem.ZeroString(&output.RecoveryData)
 
 	fmt.Printf("Key share saved to: %s\n", participantOutput)
 	fmt.Println("\nWARNING: Keep the secret_share confidential! Do not share it.")

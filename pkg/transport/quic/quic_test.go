@@ -831,8 +831,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid host secret key length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 16), // Should be 32
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 16)), // Should be 32
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: 0,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
@@ -842,8 +842,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid randomness length",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 16), // Should be 32
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 16)), // Should be 32
 				ParticipantIdx: 0,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
@@ -853,8 +853,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid participant index (negative)",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: -1,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
@@ -864,8 +864,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid participant index (too high)",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: 5,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize)},
 				Threshold:      1,
@@ -875,8 +875,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid threshold (too low)",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: 0,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize), make([]byte, transport.PublicKeySize)},
 				Threshold:      0,
@@ -886,8 +886,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "invalid threshold (too high)",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: 0,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize), make([]byte, transport.PublicKeySize)},
 				Threshold:      5,
@@ -897,8 +897,8 @@ func TestQUICDKGParamsValidation(t *testing.T) {
 		{
 			name: "valid params",
 			params: &transport.DKGParams{
-				HostSeckey:     make([]byte, 32),
-				Random:         make([]byte, 32),
+				HostSeckey:     transport.SealSecret(make([]byte, 32)),
+				Random:         transport.SealSecret(make([]byte, 32)),
 				ParticipantIdx: 0,
 				HostPubkeys:    [][]byte{make([]byte, transport.PublicKeySize), make([]byte, transport.PublicKeySize)},
 				Threshold:      2,
@@ -1336,10 +1336,10 @@ func createTestDKGParams(t *testing.T, idx, numParticipants, threshold int) *tra
 	}
 
 	return &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    hostPubkeys,
 		Threshold:      threshold,
 		ParticipantIdx: idx,
-		Random:         randomness,
+		Random:         transport.SealSecret(randomness),
 	}
 }

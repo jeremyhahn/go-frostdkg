@@ -117,11 +117,11 @@ func TestFullDKGFlow(t *testing.T) {
 			defer func() { _ = client.Disconnect() }()
 
 			params := &transport.DKGParams{
-				HostSeckey:     hostSeckeys[idx],
+				HostSeckey:     transport.SealSecret(hostSeckeys[idx]),
 				HostPubkeys:    hostPubkeys,
 				Threshold:      threshold,
 				ParticipantIdx: idx,
-				Random:         randoms[idx],
+				Random:         transport.SealSecret(randoms[idx]),
 			}
 
 			result, err := client.RunDKG(ctx, params)
@@ -188,11 +188,11 @@ func TestClientNotConnected(t *testing.T) {
 	}
 
 	params := &transport.DKGParams{
-		HostSeckey:     hostSeckey,
+		HostSeckey:     transport.SealSecret(hostSeckey),
 		HostPubkeys:    [][]byte{hostPubkey},
 		Threshold:      1,
 		ParticipantIdx: 0,
-		Random:         random,
+		Random:         transport.SealSecret(random),
 	}
 
 	// Try to run DKG without connecting

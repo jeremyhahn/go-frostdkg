@@ -250,9 +250,14 @@ type Participant interface {
 //   - Participant index (this participant's position in the host public key list)
 //   - Randomness (for DKG session, must be cryptographically secure)
 type DKGParams struct {
-	// HostSeckey is this participant's host secret key (32 bytes).
-	// This is the long-term identity key for this participant.
-	HostSeckey []byte
+	// HostSeckey is this participant's host secret key (32 bytes), sealed in a
+	// memguard enclave: encrypted at rest, decrypted into mlock'd memory only
+	// for the moment an operation needs it.
+	//
+	// Build it with transport.SealSecret, which copies and seals, or with
+	// secmem.NewSecretBytes if you want your source slice zeroed as it is
+	// taken. The params struct owns what you put here — Zeroize destroys it.
+	HostSeckey *secmem.SecretBytes
 
 	// HostPubkeys is the ordered list of all participants' host public keys.
 	// Each key is 32 bytes (Ed25519 public key).
@@ -267,9 +272,14 @@ type DKGParams struct {
 	// Must satisfy: 0 <= ParticipantIdx < len(HostPubkeys)
 	ParticipantIdx int
 
-	// Random is cryptographically secure randomness for the DKG session (32 bytes).
-	// Must be generated using a CSPRNG.
-	Random []byte
+	// Random is cryptographically secure randomness for the DKG session
+	// (32 bytes), sealed in a memguard enclave.
+	//
+	// It is a SECRET, not a nonce: combined with HostSeckey it derives the
+	// participant's session seed, so anyone holding it and the host key can
+	// reproduce the seed and therefore the share. Build it with SealSecret and
+	// let Zeroize destroy it.
+	Random *secmem.SecretBytes
 }
 
 // DKGResult contains the output of a successful DKG session.
@@ -282,9 +292,13 @@ type DKGParams struct {
 //
 // The secret share must be kept confidential. All other data is public.
 type DKGResult struct {
-	// SecretShare is this participant's share of the threshold secret key (32 bytes).
-	// MUST be kept confidential and securely stored.
-	SecretShare []byte
+	// SecretShare is this participant's share of the threshold secret key
+	// (32 bytes), sealed in a memguard enclave. It is the one secret a DKG
+	// produces, so it is never handed back as a plain slice.
+	//
+	// Read it with secmem.WithSecret and do not retain the bytes past the
+	// callback; release it with Zeroize when the share has been persisted.
+	SecretShare *secmem.SecretBytes
 
 	// ThresholdPubkey is the aggregate threshold public key (32 bytes, Ed25519).
 	// This is the public key corresponding to the distributed secret key.
@@ -308,9 +322,13 @@ func (p *DKGParams) Zeroize() {
 	if p == nil {
 		return
 	}
-	secmem.ZeroBytes(p.HostSeckey)
-	secmem.ZeroBytes(p.Random)
+	if p.HostSeckey != nil {
+		p.HostSeckey.Destroy()
+	}
 	p.HostSeckey = nil
+	if p.Random != nil {
+		p.Random.Destroy()
+	}
 	p.Random = nil
 }
 
@@ -319,8 +337,29 @@ func (r *DKGResult) Zeroize() {
 	if r == nil {
 		return
 	}
-	secmem.ZeroBytes(r.SecretShare)
+	if r.SecretShare != nil {
+		r.SecretShare.Destroy()
+	}
 	r.SecretShare = nil
+}
+
+// SealSecret seals a copy of secret material in a memguard enclave, for
+// callers building a DKGParams or a DKGResult.
+//
+// It copies rather than sealing the caller's slice directly, because
+// secmem.NewSecretBytes zeroes what it is handed: a caller that still needs
+// its own buffer — reading several participants' keys out of one decoded
+// document, say — would otherwise find it wiped underneath. Use
+// secmem.NewSecretBytes directly when zeroing the source IS what you want.
+//
+// Returns nil for empty input, matching secmem.NewSecretBytes.
+func SealSecret(secret []byte) *secmem.SecretBytes {
+	if len(secret) == 0 {
+		return nil
+	}
+	c := make([]byte, len(secret))
+	copy(c, secret)
+	return secmem.NewSecretBytes(c)
 }
 
 // SessionConfig contains configuration for a coordinator DKG session.

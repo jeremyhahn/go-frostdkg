@@ -48,11 +48,11 @@ func TestProtocolConstants(t *testing.T) {
 // TestDKGParamsValidation tests basic DKGParams structure validation.
 func TestDKGParamsValidation(t *testing.T) {
 	validParams := &DKGParams{
-		HostSeckey:     make([]byte, SecretKeySize),
+		HostSeckey:     SealSecret(make([]byte, SecretKeySize)),
 		HostPubkeys:    [][]byte{make([]byte, PublicKeySize), make([]byte, PublicKeySize), make([]byte, PublicKeySize)},
 		Threshold:      2,
 		ParticipantIdx: 0,
-		Random:         make([]byte, 32),
+		Random:         SealSecret(make([]byte, 32)),
 	}
 
 	// Test valid params structure (no validation method yet, just ensure it can be created)
@@ -64,11 +64,11 @@ func TestDKGParamsValidation(t *testing.T) {
 		t.Error("Valid params should have participant index in valid range")
 	}
 
-	if len(validParams.HostSeckey) != 32 {
+	if validParams.HostSeckey.Size() != 32 {
 		t.Error("Host secret key should be 32 bytes")
 	}
 
-	if len(validParams.Random) != 32 {
+	if validParams.Random.Size() != 32 {
 		t.Error("Random should be 32 bytes")
 	}
 }
@@ -92,11 +92,11 @@ func TestDKGParamsInvalidThreshold(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			params := &DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     SealSecret(make([]byte, 32)),
 				HostPubkeys:    make([][]byte, tt.numKeys),
 				Threshold:      tt.threshold,
 				ParticipantIdx: 0,
-				Random:         make([]byte, 32),
+				Random:         SealSecret(make([]byte, 32)),
 			}
 
 			// Initialize host pubkeys
@@ -136,11 +136,11 @@ func TestDKGParamsInvalidParticipantIndex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			params := &DKGParams{
-				HostSeckey:     make([]byte, 32),
+				HostSeckey:     SealSecret(make([]byte, 32)),
 				HostPubkeys:    make([][]byte, tt.numKeys),
 				Threshold:      2,
 				ParticipantIdx: tt.index,
-				Random:         make([]byte, 32),
+				Random:         SealSecret(make([]byte, 32)),
 			}
 
 			// Initialize host pubkeys
@@ -181,15 +181,15 @@ func TestDKGParamsInvalidKeyLengths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			params := &DKGParams{
-				HostSeckey:     make([]byte, tt.hostSeckeyLen),
+				HostSeckey:     SealSecret(make([]byte, tt.hostSeckeyLen)),
 				HostPubkeys:    [][]byte{make([]byte, PublicKeySize)},
 				Threshold:      1,
 				ParticipantIdx: 0,
-				Random:         make([]byte, tt.randomLen),
+				Random:         SealSecret(make([]byte, tt.randomLen)),
 			}
 
 			// Manual validation
-			isValid := len(params.HostSeckey) == 32 && len(params.Random) == 32
+			isValid := params.HostSeckey.Size() == 32 && params.Random.Size() == 32
 
 			if tt.shouldFail && isValid {
 				t.Error("Expected invalid key lengths to fail validation")
@@ -204,14 +204,14 @@ func TestDKGParamsInvalidKeyLengths(t *testing.T) {
 // TestDKGResultStructure tests basic DKGResult structure.
 func TestDKGResultStructure(t *testing.T) {
 	result := &DKGResult{
-		SecretShare:     make([]byte, SecretKeySize),
+		SecretShare:     SealSecret(make([]byte, SecretKeySize)),
 		ThresholdPubkey: make([]byte, PublicKeySize),
 		PublicShares:    [][]byte{make([]byte, PublicKeySize), make([]byte, PublicKeySize)},
 		SessionID:       "test-session-123",
 		RecoveryData:    make([]byte, 100),
 	}
 
-	if len(result.SecretShare) != 32 {
+	if result.SecretShare.Size() != 32 {
 		t.Error("Secret share should be 32 bytes")
 	}
 

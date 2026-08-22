@@ -426,7 +426,7 @@ func TestFROSTDKGEncParticipantRound2Errors(t *testing.T) {
 		// Create state with invalid host secret key that will cause ECDH to fail
 		corruptedState := &FROSTDKGEncParticipantState{
 			FROSTDKGParticipantState: state1.FROSTDKGParticipantState,
-			HostSeckey:               []byte{0xFF}, // Invalid seckey length
+			HostSeckey:               sealCopy([]byte{0xFF}), // Invalid seckey length
 			HostPubkeys:              hostPubkeys,
 			Pubnonce:                 state1.Pubnonce,
 		}

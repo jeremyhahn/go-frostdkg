@@ -307,7 +307,7 @@ func TestFROSTDKGParticipantStateZeroize(t *testing.T) {
 		}
 
 		state := &FROSTDKGParticipantState{
-			Seed: seed,
+			Seed: sealCopy(seed),
 			VSS:  vss,
 		}
 
@@ -336,9 +336,9 @@ func TestFROSTDKGEncParticipantStateZeroize(t *testing.T) {
 
 		state := &FROSTDKGEncParticipantState{
 			FROSTDKGParticipantState: &FROSTDKGParticipantState{
-				Seed: seed,
+				Seed: sealCopy(seed),
 			},
-			HostSeckey: hostSeckey,
+			HostSeckey: sealCopy(hostSeckey),
 		}
 
 		state.Zeroize()
@@ -365,10 +365,10 @@ func TestFROSTDKGFullParticipantState1Zeroize(t *testing.T) {
 		_, _ = rand.Read(seed)
 
 		state := &FROSTDKGFullParticipantState1{
-			HostSeckey: hostSeckey,
+			HostSeckey: sealCopy(hostSeckey),
 			EncState: &FROSTDKGEncParticipantState{
 				FROSTDKGParticipantState: &FROSTDKGParticipantState{
-					Seed: seed,
+					Seed: sealCopy(seed),
 				},
 			},
 		}
@@ -465,7 +465,7 @@ func TestFROSTDKGEncParticipantStateHKZeroize(t *testing.T) {
 
 		state := &FROSTDKGEncParticipantStateHK{
 			FROSTDKGParticipantState: &FROSTDKGParticipantState{
-				Seed: seed,
+				Seed: sealCopy(seed),
 			},
 		}
 
@@ -493,7 +493,7 @@ func TestFROSTDKGFullParticipantStateHK1Zeroize(t *testing.T) {
 		state := &FROSTDKGFullParticipantStateHK1{
 			EncState: &FROSTDKGEncParticipantStateHK{
 				FROSTDKGParticipantState: &FROSTDKGParticipantState{
-					Seed: seed,
+					Seed: sealCopy(seed),
 				},
 			},
 		}

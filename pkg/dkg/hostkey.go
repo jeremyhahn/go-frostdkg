@@ -88,8 +88,12 @@ type HostKeyGenerator interface {
 // SoftwareHostKey is a software implementation of HostKey.
 // The private key is held in memory and can be used for ECDH and signing.
 type SoftwareHostKey struct {
-	cs        ciphersuite.Ciphersuite
-	secretKey []byte
+	cs ciphersuite.Ciphersuite
+	// secret holds the raw secret key sealed in a memguard enclave: encrypted
+	// at rest, decrypted only into mlock'd memory for the moment an operation
+	// needs it. It is never a plain []byte field, because a plain field lives
+	// on the swappable heap for the whole life of the key.
+	secret    *secmem.SecretBytes
 	publicKey []byte
 	scalar    group.Scalar // Derived scalar for ECDH
 	rng       io.Reader    // Random number generator for signing
@@ -178,13 +182,19 @@ func NewSoftwareHostKeyWithRNG(cs ciphersuite.Ciphersuite, secretKey []byte, rng
 		return nil, ErrUnknownCiphersuite
 	}
 
-	// Copy the secret key to prevent the caller from modifying it
+	// Seal a copy of the secret. NewSecretBytes zeroes what it is handed, so
+	// it is given a copy rather than the caller's slice: the caller still owns
+	// that one (see the ownership rule on the *WithHostKey entry points).
 	secretKeyCopy := make([]byte, len(secretKey))
 	copy(secretKeyCopy, secretKey)
+	secret := secmem.NewSecretBytes(secretKeyCopy)
+	if secret == nil {
+		return nil, ErrInvalidSecretKey
+	}
 
 	return &SoftwareHostKey{
 		cs:        cs,
-		secretKey: secretKeyCopy,
+		secret:    secret,
 		publicKey: publicKey,
 		scalar:    scalar,
 		rng:       rng,
@@ -215,17 +225,20 @@ func GenerateSoftwareHostKeyWithRNG(cs ciphersuite.Ciphersuite, rng io.Reader) (
 		return nil, ErrUnknownCiphersuite
 	}
 
+	// Zeroed on EVERY path, not just the failure one. NewSoftwareHostKeyWithRNG
+	// seals a copy and deliberately leaves this slice intact — the borrow rule,
+	// since the key it is normally handed belongs to its caller. Here the
+	// buffer is ours, so leaving it alone would strand a freshly generated
+	// host key in plain heap memory until the GC happened to collect it, which
+	// is exactly what the enclave is meant to prevent.
 	secretKey := make([]byte, keyLen)
+	defer secmem.ZeroBytes(secretKey)
+
 	if _, err := io.ReadFull(rng, secretKey); err != nil {
 		return nil, err
 	}
 
-	hk, err := NewSoftwareHostKeyWithRNG(cs, secretKey, rng)
-	if err != nil {
-		secmem.ZeroBytes(secretKey)
-		return nil, err
-	}
-	return hk, nil
+	return NewSoftwareHostKeyWithRNG(cs, secretKey, rng)
 }
 
 // Zeroize securely clears all secret key material.
@@ -233,8 +246,10 @@ func (k *SoftwareHostKey) Zeroize() {
 	if k == nil {
 		return
 	}
-	secmem.ZeroBytes(k.secretKey)
-	k.secretKey = nil
+	if k.secret != nil {
+		k.secret.Destroy()
+	}
+	k.secret = nil
 	if k.scalar != nil {
 		k.scalar.Zeroize()
 	}
@@ -243,11 +258,12 @@ func (k *SoftwareHostKey) Zeroize() {
 
 // zeroized reports whether Zeroize has cleared this key's secret material.
 //
-// Zeroize nils both secretKey and scalar, and the private-key operations
-// dereference them, so an operation attempted after zeroization must be
-// refused here rather than panicking somewhere inside the group arithmetic.
+// Zeroize destroys the enclave and nils both it and the scalar, and the
+// private-key operations dereference them, so an operation attempted after
+// zeroization must be refused here rather than panicking somewhere inside the
+// group arithmetic.
 func (k *SoftwareHostKey) zeroized() bool {
-	return k == nil || k.scalar == nil || k.secretKey == nil
+	return k == nil || k.scalar == nil || k.secret == nil
 }
 
 // ECDH computes a Diffie-Hellman shared secret.
@@ -297,8 +313,17 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 	curve := elliptic.P256()
 	privKey := new(ecdsa.PrivateKey)
 	privKey.Curve = curve
-	privKey.D = new(big.Int).SetBytes(k.secretKey)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
-	privKey.X, privKey.Y = curve.ScalarBaseMult(k.secretKey) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+
+	// The enclave is open only for the two derivations that need the raw key.
+	// privKey.D keeps a big.Int copy of it, which is why it is zeroed below.
+	if err := secmem.WithSecret(k.secret, func(sk []byte) error {
+		privKey.D = new(big.Int).SetBytes(sk)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+		privKey.X, privKey.Y = curve.ScalarBaseMult(sk) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+		return nil
+	}); err != nil {
+		return nil, ErrHostKeySignFailed
+	}
+	defer zeroBigInt(privKey.D) //nolint:staticcheck // SA1019: same crypto/ecdh deferral as the assignments above; this only zeroes the copy they made
 
 	hash := sha256.Sum256(message)
 	r, s, err := ecdsa.Sign(k.rng, privKey, hash[:])
@@ -327,13 +352,20 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 
 // signSchnorr creates a Schnorr signature.
 func (k *SoftwareHostKey) signSchnorr(grp group.Group, message []byte) ([]byte, error) {
-	// Generate nonce: r = H3(secretKey || message)
-	nonceInput := make([]byte, len(k.secretKey)+len(message))
-	copy(nonceInput, k.secretKey)
-	copy(nonceInput[len(k.secretKey):], message)
-	r := k.cs.H3(nonceInput)
+	// Generate nonce: r = H3(secretKey || message). The enclave is open only
+	// for the concatenation; nonceInput is zeroed as soon as it is hashed.
+	var r group.Scalar
+	if err := secmem.WithSecret(k.secret, func(sk []byte) error {
+		nonceInput := make([]byte, len(sk)+len(message))
+		copy(nonceInput, sk)
+		copy(nonceInput[len(sk):], message)
+		r = k.cs.H3(nonceInput)
+		secmem.ZeroBytes(nonceInput)
+		return nil
+	}); err != nil {
+		return nil, ErrHostKeySignFailed
+	}
 	defer r.Zeroize()
-	secmem.ZeroBytes(nonceInput)
 
 	// R = r * G
 	R := grp.ScalarBaseMult(r)
@@ -373,12 +405,47 @@ func (k *SoftwareHostKey) PublicKey() []byte {
 	return k.publicKey
 }
 
-// SecretKey returns the secret key bytes.
-// This is only available for software keys; hardware keys would not expose this.
+// SecretKey returns a copy of the secret key bytes.
+//
+// This is the one path by which the secret leaves protected memory, and it
+// exists because HostKeyGenerator.LoadHostKey documents software keys as
+// exportable — persisting and reloading a host key needs it. The copy it
+// returns is an ordinary heap slice on the caller's swappable heap: whoever
+// calls this owns the exposure and must ZeroBytes the result as soon as it has
+// been consumed. Hardware-backed keys do not expose this at all.
+//
+// Returns nil if the key has been zeroized.
 func (k *SoftwareHostKey) SecretKey() []byte {
-	result := make([]byte, len(k.secretKey))
-	copy(result, k.secretKey)
+	if k.zeroized() {
+		return nil
+	}
+	var result []byte
+	if err := secmem.WithSecret(k.secret, func(sk []byte) error {
+		result = make([]byte, len(sk))
+		copy(result, sk)
+		return nil
+	}); err != nil {
+		return nil
+	}
 	return result
+}
+
+// zeroBigInt best-effort overwrites a big.Int's magnitude in place.
+//
+// ecdsa.PrivateKey.D holds a copy of the raw secret on the ordinary heap, and
+// nothing zeroed it before the enclave migration. This is an improvement, not
+// a guarantee: SetBytes reuses the existing backing array when the capacity
+// allows — which it does here, the length being unchanged — so the words are
+// overwritten in practice, but math/big promises nothing about that, and
+// ecdsa.Sign may have made copies of its own that are equally out of reach.
+// Scrubbing what we can reach is worth doing; claiming the secret is gone from
+// the heap afterwards would not be true.
+func zeroBigInt(n *big.Int) {
+	if n == nil {
+		return
+	}
+	n.SetBytes(make([]byte, len(n.Bytes())))
+	n.SetInt64(0)
 }
 
 // SoftwareHostKeyGenerator generates software host keys.

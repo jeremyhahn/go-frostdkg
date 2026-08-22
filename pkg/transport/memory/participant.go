@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jeremyhahn/go-frost/pkg/secmem"
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport"
 )
 
@@ -134,11 +135,11 @@ func (mp *MemoryParticipant) validateDKGParams(params *transport.DKGParams) erro
 		return transport.ErrInvalidDKGParams
 	}
 
-	if len(params.HostSeckey) != 32 {
+	if params.HostSeckey.Size() != 32 {
 		return transport.ErrInvalidHostKey
 	}
 
-	if len(params.Random) != 32 {
+	if params.Random.Size() != 32 {
 		return transport.ErrInvalidRandomness
 	}
 
@@ -259,20 +260,23 @@ func (mp *MemoryParticipant) executeDKG(ctx context.Context, params *transport.D
 	// For testing purposes, we'll create a mock result
 	// Real implementation would integrate with the FROST library
 
+	// The deterministic share is built in the clear and then sealed. It is
+	// test data, not key material -- SealSecret is used anyway so the shape of
+	// a DKGResult is the same one a real ceremony would hand back.
+	secretShare := make([]byte, transport.SecretKeySize)
+	secretShare[0] = byte(params.ParticipantIdx + 1)
+	for i := 1; i < transport.SecretKeySize; i++ {
+		secretShare[i] = byte(0x42 + params.ParticipantIdx)
+	}
+
 	result := &transport.DKGResult{
-		SecretShare:     make([]byte, transport.SecretKeySize),
+		SecretShare:     transport.SealSecret(secretShare),
 		ThresholdPubkey: make([]byte, transport.PublicKeySize),
 		PublicShares:    make([][]byte, len(params.HostPubkeys)),
 		SessionID:       mp.sessionID,
 		RecoveryData:    make([]byte, 64),
 	}
-
-	// Fill with unique test data per participant
-	// Secret share is unique per participant (participant index in first byte)
-	result.SecretShare[0] = byte(params.ParticipantIdx + 1)
-	for i := 1; i < transport.SecretKeySize; i++ {
-		result.SecretShare[i] = byte(0x42 + params.ParticipantIdx)
-	}
+	secmem.ZeroBytes(secretShare)
 
 	// Threshold pubkey is the same for all participants
 	for i := range result.ThresholdPubkey {
