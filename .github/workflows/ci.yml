@@ -103,7 +103,7 @@ jobs:
       # prints nothing at all in the job log.
       - name: Run gosec
         run: |
-          gosec -exclude=G115,G118 \
+          gosec -concurrency 4 -exclude=G115,G118 \
             -exclude-generated \
             -severity medium \
             -confidence medium \
