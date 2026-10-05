@@ -6,8 +6,10 @@
 
 FROM golang:1.26.7-alpine
 
-# Install test dependencies
-RUN apk add --no-cache \
+# Install test dependencies. `apk upgrade` first: the base image's own
+# packages lag alpine's security fixes (libcrypto3 3.5.7-r0, CVE-2026-14456,
+# failed the image gate), and the gate scans what the image ships (#41).
+RUN apk upgrade --no-cache && apk add --no-cache \
     git \
     make \
     gcc \
