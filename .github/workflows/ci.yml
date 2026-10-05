@@ -1,4 +1,11 @@
-# ci-template: v1 — canonical CI for all first-party Go repos.
+# ci-template: v1.15 — canonical CI for all first-party Go repos.
+#
+# v1.15 (2026-10-05, go-frostdkg#39; automatethethings#209): every job starts
+# at once — no job waits on lint or build (v1.14) — and CI Gate still needs
+# every job and fails closed. push runs on main only: automerge.yml v7's merge
+# trains are PRs and get CI from pull_request. Dependencies that are real stay:
+# integration-test after test (the shared 0.0.0.0:9000 coordinator port) and
+# docker after integration-test.
 # Source of truth: software/templates/github-actions/ci.yml in the
 # automatethethings repo. Copied into each repo (never workflow_call: the
 # template lives inside the security boundary and cannot be referenced from
@@ -12,9 +19,11 @@ name: CI
 
 on:
   push:
-    branches: [master, main, develop]
+    # trunk-based: main is the ONLY trunk. automerge.yml's merge trains are
+    # PRs from merge-train/* and get CI from pull_request (v1.15).
+    branches: [main]
   pull_request:
-    branches: [master, main, develop]
+    branches: [main]
   # Re-run by hand without an empty commit. The shared runner host is
   # occasionally saturated enough that a job is starved out with no output at
   # all, and this Gitea build exposes no rerun API (devops.md §5).
@@ -72,7 +81,7 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
-    needs: [lint, build]  # v1.9 staged fail-fast: expensive tier gates on the fast tier (no cancel API — task #90)
+    # No `needs` (v1.14): starts with lint and build, not after them.
     steps:
       - uses: actions/checkout@v6
 
@@ -132,7 +141,7 @@ jobs:
   trivy:
     name: Trivy
     runs-on: ubuntu-latest
-    needs: [lint, build]  # v1.9 staged fail-fast: expensive tier gates on the fast tier (no cancel API — task #90)
+    # No `needs` (v1.14): starts with lint and build, not after them.
     steps:
       - uses: actions/checkout@v6
 
@@ -253,7 +262,7 @@ jobs:
   fips:
     name: FIPS
     runs-on: ubuntu-latest
-    needs: [build]
+    # No `needs` (v1.14): starts with lint and build, not after them.
     timeout-minutes: 30
     env:
       GOFIPS140: latest
@@ -274,7 +283,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: [lint, build]
+    # No `needs` (v1.14): every job starts at once; CI Gate fails closed on
+    # any of them.
     timeout-minutes: 30       # CUSTOMIZE: suite runs in ~1m; 30m is headroom
     steps:
       - uses: actions/checkout@v6
@@ -364,7 +374,7 @@ jobs:
   docker:
     name: Build and Scan Docker Image
     runs-on: ubuntu-latest
-    needs: [build, integration-test]
+    needs: [integration-test]
     steps:
       - uses: actions/checkout@v6
 
