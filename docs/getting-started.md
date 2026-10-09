@@ -1,5 +1,8 @@
 # Getting Started with FROST DKG
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> Quick-start for the `frostdkg` CLI in `cmd/frostdkg`.
+
 Quick start guide for running distributed key generation with the `frostdkg` CLI tool.
 
 ## Installation
@@ -94,7 +97,7 @@ frostdkg verify --share share1.json
 frostdkg verify --share share2.json
 ```
 
-All shares should show the same threshold public key, confirming successful key generation.
+`verify` checks each share's structure and key lengths. To confirm all shares agree, read `threshold_pubkey` from each share file and pass it as `--group-key`; `verify` fails on a mismatch.
 
 ## Using Different Protocols
 
@@ -135,12 +138,7 @@ frostdkg participant --protocol libp2p --coordinator localhost:9002 \
   --id 0 --threshold 2 --output share0.json
 ```
 
-### MCP Transport (AI Integration)
-```bash
-# HTTP mode coordinator for AI agents
-frostdkg coordinator --protocol mcp --listen localhost:8080 \
-  --threshold 2 --participants 3
-```
+The CLI accepts `grpc`, `http`, `quic`, `unix` and `libp2p` for `--protocol`. The `mcp` and `memory` transports are Go packages only.
 
 ## Using Configuration Files
 
@@ -149,7 +147,7 @@ Generate a configuration template:
 frostdkg config init --output ~/.frostdkg/config.yaml
 ```
 
-Edit the configuration file to set defaults:
+The commands read only their flags. Config file values appear in `frostdkg config show` but do not set defaults (see [cli.md](cli.md)). The file format is:
 ```yaml
 protocol: grpc
 codec: json
@@ -162,10 +160,9 @@ coordinator:
   listen: "0.0.0.0:9000"
 ```
 
-Run with config file:
+Load a specific config file:
 ```bash
-frostdkg --config ~/.frostdkg/config.yaml coordinator
-frostdkg --config ~/.frostdkg/config.yaml participant --id 0 --output share0.json
+frostdkg --config ~/.frostdkg/config.yaml config show
 ```
 
 ## Next Steps

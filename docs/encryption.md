@@ -1,5 +1,8 @@
 # Encrypted DKG and HostKey
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built description of encrypted DKG and the HostKey interface in `pkg/dkg`.
+
 This document covers application-level encryption for FROST-DKG secret shares and the HostKey interface for hardware security module integration.
 
 ## DKG Modes
@@ -85,13 +88,15 @@ The ECDH shared secret is computed as:
 
 ```
 shared_point = my_scalar * their_pubkey
-pad = H4("FROST-DKG/ecdh pad" || my_nonce || their_nonce || shared_point)
+pad = hashToBytes(cs, "ecdh pad", my_nonce || their_nonce || shared_point)
 encrypted_share = share XOR pad[:share_len]
 ```
 
-Nonce ordering ensures encryption/decryption symmetry:
+Nonce ordering ensures encryption/decryption symmetry (`frostDKGECDH` in `pkg/dkg/frostdkg.go`):
 - Encryption: `my_nonce || their_nonce`
 - Decryption: `their_nonce || my_nonce`
+
+In `FROSTDKGEncParticipantRound1` the sender passes its own public nonce for both positions, because the receiver's nonce is not yet known.
 
 ### API Reference
 
@@ -225,7 +230,7 @@ func (k *TPMHostKey) PublicKey() []byte {
 
 Key implementation requirements:
 1. ECDH must return raw shared point (not hashed)
-2. Sign must produce deterministic Schnorr signatures
+2. Sign must produce signatures in the scheme `SoftwareHostKey` uses (ECDSA for P-256, Schnorr otherwise)
 3. PublicKey must match the format expected by the ciphersuite
 
 ## Full Protocol with HostKey
@@ -296,7 +301,7 @@ The `--hostkey` flag provides the participant's host secret key:
 frostdkg participant --id 0 --hostkey abcd1234...5678 \
     --threshold 2 --output share.json
 
-# Auto-generate if not provided (printed to stdout when verbose)
+# Auto-generate if not provided (a SHA-256 fingerprint of the key is printed when verbose)
 frostdkg participant --id 0 --threshold 2 --output share.json --verbose
 ```
 
@@ -312,6 +317,8 @@ frostdkg participant --id 0 \
 ```
 
 ### Configuration File
+
+The CLI reads only its flags; these keys are loaded and shown by `config show` but do not set the flags (see [cli.md](cli.md)).
 
 ```yaml
 participant:

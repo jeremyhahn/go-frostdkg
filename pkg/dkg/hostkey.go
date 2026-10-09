@@ -507,6 +507,24 @@ func VerifyHostKeySignature(cs ciphersuite.Ciphersuite, publicKey, message, sign
 }
 
 // verifyP256Signature verifies an ECDSA signature.
+// p256PublicKey builds an ECDSA public key from affine coordinates through the
+// validating parser, as setting ecdsa.PublicKey.X/Y directly is deprecated.
+// Coordinates must each fit in 32 bytes; a point off the curve is rejected.
+func p256PublicKey(curve elliptic.Curve, x, y *big.Int) (*ecdsa.PublicKey, error) {
+	if x.BitLen() > 256 || y.BitLen() > 256 {
+		return nil, ErrInvalidPublicKey
+	}
+	raw := make([]byte, 65)
+	raw[0] = 0x04
+	x.FillBytes(raw[1:33])
+	y.FillBytes(raw[33:])
+	pubKey, err := ecdsa.ParseUncompressedPublicKey(curve, raw)
+	if err != nil {
+		return nil, ErrInvalidPublicKey
+	}
+	return pubKey, nil
+}
+
 func verifyP256Signature(publicKey, message, signature []byte) error {
 	if len(signature) != 64 {
 		return ErrInvalidSignature
@@ -527,7 +545,10 @@ func verifyP256Signature(publicKey, message, signature []byte) error {
 		return ErrInvalidPublicKey
 	}
 
-	pubKey := &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
+	pubKey, err := p256PublicKey(curve, x, y)
+	if err != nil {
+		return err
+	}
 	hash := sha256.Sum256(message)
 
 	r := new(big.Int).SetBytes(signature[:32])

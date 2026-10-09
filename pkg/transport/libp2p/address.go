@@ -56,6 +56,19 @@ const defaultListenHost = "0.0.0.0"
 // name that resolves to nothing is rejected as an invalid address, which is
 // where it would fail anyway, only later and less legibly.
 func ListenMultiaddr(address string) (string, error) {
+	return listenMultiaddr(address, DefaultCoordinatorPort)
+}
+
+// ParticipantListenMultiaddr is ListenMultiaddr for a participant: a missing
+// or zero port stays 0, so the OS picks an ephemeral port and a participant
+// never collides with a coordinator on the same host.
+func ParticipantListenMultiaddr(address string) (string, error) {
+	return listenMultiaddr(address, 0)
+}
+
+// listenMultiaddr implements ListenMultiaddr with defaultPort standing in for
+// a missing or zero port.
+func listenMultiaddr(address string, defaultPort int) (string, error) {
 	if address == "" {
 		address = defaultListenHost
 	}
@@ -74,7 +87,7 @@ func ListenMultiaddr(address string) (string, error) {
 		host, portStr = address, ""
 	}
 
-	port := DefaultCoordinatorPort
+	port := defaultPort
 	if portStr != "" {
 		parsed, err := strconv.Atoi(portStr)
 		if err != nil || parsed < 0 || parsed > 65535 {

@@ -1,5 +1,8 @@
 # Transport Layer
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built description of the transports under `pkg/transport`.
+
 The transport layer provides flexible network communication for FROST DKG sessions. It abstracts protocol-specific details behind a unified interface, allowing participants to connect via multiple transport protocols with pluggable serialization and TLS security.
 
 ## Architecture
@@ -80,8 +83,14 @@ cfg := &transport.Config{
 }
 ```
 
+`Address` is the address the host listens on, as either a multiaddr or
+`host:port`. A coordinator with no address listens on port 9000. A participant
+(`NewP2PParticipantFromTransportConfig`) listens on the same `Address`; with
+none set it listens on an ephemeral port on all interfaces, so it never
+collides with a coordinator on the same host.
+
 ### MCP (Model Context Protocol)
-JSON-RPC 2.0 based transport designed for AI agent integration.
+JSON-RPC 2.0 based transport designed for AI agent integration. Go package only: the `frostdkg` CLI does not accept `--protocol mcp`.
 
 **Best for**: AI assistants, LLM tool integration, automation
 **Latency**: Low
@@ -113,7 +122,7 @@ Available tools:
 See [MCP Transport Details](../pkg/transport/mcp/README.md) for comprehensive API documentation, error codes, and integration examples.
 
 ### Memory (Testing Only)
-In-process communication for unit tests.
+In-process communication for unit tests. Go package only: the `frostdkg` CLI does not accept `--protocol memory`.
 
 ```go
 cfg := transport.NewMemoryConfig("test-session")
@@ -130,6 +139,7 @@ type Config struct {
     TLSKeyFile        string        // TLS private key (PEM)
     TLSCAFile         string        // CA cert for mTLS (PEM)
     CodecType         string        // json, msgpack, cbor
+    Ciphersuite       string        // FROST ciphersuite
     Timeout           time.Duration // Operation timeout
     MaxMessageSize    int           // Max message bytes
     KeepAlive         bool          // TCP keepalive
@@ -243,7 +253,7 @@ The encrypted DKG variant (`FROSTDKGEncParticipantRound1`, etc.) provides applic
 **Encryption scheme**:
 1. Each participant generates an ephemeral nonce
 2. ECDH shared secret: `sender_hostSecret × receiver_hostPubkey`
-3. Pad derivation: `H("ecdh pad" || nonce || shared_secret)`
+3. Pad derivation: `hashToBytes(cs, "ecdh pad", sender_nonce || receiver_nonce || shared_secret)`
 4. XOR encryption of secret shares
 
 ```go
@@ -329,7 +339,7 @@ params := &transport.DKGParams{
     // secmem.NewSecretBytes instead when you want your source slice zeroed
     // as it is taken.
     HostSeckey:     transport.SealSecret(hostSeckey), // 32 bytes
-    HostPubkeys:    hostPubkeys,                      // n x 32 bytes
+    HostPubkeys:    hostPubkeys,                      // n keys, size per ciphersuite
     Threshold:      2,
     ParticipantIdx: 0,
     Random:         transport.SealSecret(randomness), // 32 bytes, also a secret

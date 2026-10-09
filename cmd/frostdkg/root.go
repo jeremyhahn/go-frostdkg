@@ -123,6 +123,7 @@ Use 'frostdkg verify' to verify key shares.`,
 
 		// Environment variables
 		viper.SetEnvPrefix("FROSTDKG")
+		viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 		viper.AutomaticEnv()
 	},
 }

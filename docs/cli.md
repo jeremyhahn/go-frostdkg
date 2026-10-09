@@ -1,5 +1,8 @@
 # frostdkg CLI Reference
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built description of the `frostdkg` command in `cmd/frostdkg`.
+
 Command-line tool for executing FROST Distributed Key Generation (DKG) with support for multiple transport protocols and serialization formats.
 
 ## Overview
@@ -37,7 +40,7 @@ These flags apply to all commands and configure transport, security, and output:
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--config` | Config file path | `$HOME/.frostdkg/config.yaml` |
-| `--protocol` | Transport protocol (`grpc`, `http`, `quic`, `unix`, `libp2p`, `mcp`, `memory`) | `grpc` |
+| `--protocol` | Transport protocol (`grpc`, `http`, `quic`, `unix`, `libp2p`) | `grpc` |
 | `--codec` | Serialization format (`json`, `msgpack`, `cbor`) | `json` |
 | `--ciphersuite` | FROST ciphersuite (see Supported Ciphersuites below) | `FROST-ED25519-SHA512-v1` |
 | `--tls-cert` | TLS certificate file path | |
@@ -126,7 +129,7 @@ frostdkg participant [flags]
 | `--id` | | Participant identifier (0-indexed) | `-1` | Yes |
 | `--output` | `-o` | Output file path for key share | | Yes |
 | `--hostkey` | | Host secret key (hex, 32 bytes). Generated if not provided | | No |
-| `--hostpubkeys` | | Comma-separated host public keys (hex, 33 bytes each) | | No |
+| `--hostpubkeys` | | Comma-separated host public keys (hex, 32 bytes each) | | No |
 | `--threshold` | `-t` | Signing threshold (must match coordinator) | `2` | No |
 | `--timeout` | | Operation timeout in seconds | `300` | No |
 
@@ -239,7 +242,7 @@ frostdkg verify [flags]
 | Flag | Shorthand | Description | Default | Required |
 |------|-----------|-------------|---------|----------|
 | `--share` | `-s` | Path to key share file | | Yes |
-| `--group-key` | | Expected group public key (hex, 33 bytes) to verify against | | No |
+| `--group-key` | | Expected group public key (hex) to verify against | | No |
 
 #### Examples
 
@@ -274,9 +277,7 @@ frostdkg verify --share participant0.json --verbose
 
 Manage configuration files for frostdkg.
 
-Configuration files use YAML format and can specify default values for all command-line flags. Command-line flags override config file values.
-
-Environment variables can also be used with the `FROSTDKG_` prefix (e.g., `FROSTDKG_PROTOCOL=http`).
+Configuration files use YAML format. The keys mirror the command-line flags, but the commands read only their flags: values in the config file or in `FROSTDKG_*` environment variables are loaded into viper and shown by `config show`; they do not change what `coordinator`, `participant`, `certgen` or `verify` do. Pass flags. The one exception is the libp2p participant's `participant.listen` (`FROSTDKG_PARTICIPANT_LISTEN`).
 
 #### Subcommands
 
@@ -428,32 +429,13 @@ Specify config file via flag:
 frostdkg --config /path/to/config.yaml coordinator
 ```
 
-Or via environment variable:
-```bash
-export FROSTDKG_CONFIG=/path/to/config.yaml
-frostdkg coordinator
-```
+`FROSTDKG_CONFIG` is not read; `config init` prints it as a hint only. Use `--config`.
 
 ## Environment Variables
 
-All configuration values can be set via environment variables with the `FROSTDKG_` prefix:
+`FROSTDKG_`-prefixed variables are matched to viper keys, with `.` in a nested key replaced by `_`: `FROSTDKG_PROTOCOL`, `FROSTDKG_CODEC`, `FROSTDKG_VERBOSE`, `FROSTDKG_INSECURE`, `FROSTDKG_CIPHERSUITE` for top-level keys, and `FROSTDKG_TLS_CERT` or `FROSTDKG_COORDINATOR_LISTEN` for `tls.cert` or `coordinator.listen`. Apart from the one exception below, they affect `config show` output only.
 
-```bash
-export FROSTDKG_PROTOCOL=http
-export FROSTDKG_CODEC=msgpack
-export FROSTDKG_TLS_CERT=/path/to/cert.crt
-export FROSTDKG_TLS_KEY=/path/to/key.key
-export FROSTDKG_VERBOSE=true
-```
-
-### Priority Order
-
-Configuration values are resolved in the following order (highest priority first):
-
-1. Command-line flags
-2. Environment variables
-3. Configuration file
-4. Default values
+The exception is the libp2p participant's listen address: `participant.listen` is read from `FROSTDKG_PARTICIPANT_LISTEN` or the config file when `--listen` is not passed (flag > env > file; see the libp2p section).
 
 ## Key Share Format
 
@@ -555,43 +537,25 @@ frostdkg --protocol libp2p participant --coordinator /ip4/127.0.0.1/tcp/9000 \
   --id 0 -o share.json
 ```
 
+A libp2p participant is also a listening host. `--listen` sets its bind address
+(multiaddr or `host:port`); it can also come from `FROSTDKG_PARTICIPANT_LISTEN`
+or `participant.listen` in the config file, with flag > env > file precedence.
+Unset, it listens on an ephemeral port on all interfaces.
+
+```bash
+frostdkg --protocol libp2p participant --listen 127.0.0.1:9100 \
+  --coordinator /ip4/127.0.0.1/tcp/9000 --id 0 -o share.json
+```
+
 **Features:**
 - Decentralized architecture
 - NAT traversal
 - Multiple transport support
 - Secure by default (Noise protocol)
 
-### MCP (Model Context Protocol)
+### MCP and Memory
 
-JSON-RPC 2.0 based transport designed for AI agent and LLM tool integration. MCP enables AI assistants to orchestrate DKG sessions through standard tool calling interfaces.
-
-```bash
-# HTTP mode coordinator
-frostdkg --protocol mcp coordinator --listen localhost:8080
-
-# stdio mode (for subprocess integration)
-frostdkg --protocol mcp coordinator
-```
-
-**Features:**
-- JSON-RPC 2.0 compliant
-- AI/LLM tool integration
-- Two transport modes: HTTP and stdio
-- Structured tool schemas for AI assistants
-- Session state management
-
-**Available MCP Tools:**
-
-| Tool | Description |
-|------|-------------|
-| `dkg_create_session` | Create a new DKG session |
-| `dkg_join_session` | Join an existing session as participant |
-| `dkg_get_session` | Retrieve session information and status |
-| `dkg_submit_round1` | Submit Round1 VSS commitments and POP |
-| `dkg_submit_round2` | Submit Round2 encrypted shares |
-| `dkg_submit_certeq` | Submit CertEq signature |
-| `dkg_get_result` | Retrieve DKG result |
-| `dkg_list_sessions` | List all active sessions |
+The `mcp` and `memory` transports exist as Go packages (`pkg/transport/mcp`, `pkg/transport/memory`) but the CLI does not accept them: `--protocol` takes `grpc`, `http`, `quic`, `unix` or `libp2p`. See [transport.md](transport.md).
 
 ### Unix Sockets
 
@@ -609,22 +573,6 @@ frostdkg --protocol unix participant --coordinator /tmp/frostdkg.sock \
 - No network overhead
 - Automatic file-based permissions
 - Fast IPC
-
-### Memory
-
-In-memory transport for testing (no network).
-
-```bash
-frostdkg --protocol memory coordinator
-
-frostdkg --protocol memory participant --id 0 -o share.json
-```
-
-**Features:**
-- Zero network overhead
-- Ideal for testing
-- Deterministic behavior
-- Fast execution
 
 ## Complete Workflow Example
 
@@ -899,7 +847,6 @@ Choose protocol based on requirements:
 - **QUIC:** Best for low latency, unreliable networks
 - **libp2p:** Best for decentralized deployments
 - **Unix:** Best for local IPC
-- **Memory:** Best for testing
 
 ## Testing
 
@@ -916,7 +863,7 @@ make test-cli
 Run full integration tests:
 
 ```bash
-make integration-test-cli
+make integration-test
 ```
 
 ### Code Coverage

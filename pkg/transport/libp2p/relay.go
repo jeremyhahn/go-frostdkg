@@ -459,7 +459,7 @@ func (rm *RelayManager) startRelayService() error {
 			ReservationTTL:         svcConfig.ReservationTTL,
 			MaxReservations:        svcConfig.MaxReservations,
 			MaxCircuits:            svcConfig.MaxCircuits,
-			MaxReservationsPerPeer: svcConfig.MaxReservationsPerPeer,
+			MaxReservationsPerPeer: svcConfig.MaxReservationsPerPeer, //nolint:staticcheck // SA1019: libp2p deprecated the field but still reads it; our config keeps passing it through
 			MaxReservationsPerIP:   svcConfig.MaxReservationsPerIP,
 		}),
 	}
@@ -667,7 +667,7 @@ func BuildRelayHostOptions(config *RelayConfig) []libp2p.Option {
 				ReservationTTL:         svcConfig.ReservationTTL,
 				MaxReservations:        svcConfig.MaxReservations,
 				MaxCircuits:            svcConfig.MaxCircuits,
-				MaxReservationsPerPeer: svcConfig.MaxReservationsPerPeer,
+				MaxReservationsPerPeer: svcConfig.MaxReservationsPerPeer, //nolint:staticcheck // SA1019: libp2p deprecated the field but still reads it; our config keeps passing it through
 				MaxReservationsPerIP:   svcConfig.MaxReservationsPerIP,
 			}),
 		}

@@ -34,7 +34,7 @@ permissions:
   security-events: write
 
 env:
-  GO_VERSION: '1.26.7'        # latest stable — bumped portfolio-wide (devops.md §9)
+  GO_VERSION: '1.27.2'        # latest stable — bumped portfolio-wide (devops.md §9)
   COVERAGE_THRESHOLD: 60      # CUSTOMIZE: matches COVERAGE_THRESHOLD in the Makefile
   # No GOPROXY/GOSUMDB overrides here on purpose. The runner injects
   # GOPRIVATE=github.com/jeremyhahn/* plus the tokenised GIT_CONFIG rewrite to
@@ -64,13 +64,25 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # Installed from source rather than pinned to a release binary: a pinned
-      # golangci-lint built with an older Go refuses a newer go.mod outright
-      # ("the Go language version used to build golangci-lint is lower than the
-      # targeted Go version"), which is how v2.7.2 broke this job against
-      # go 1.26.6. Building with the job's own toolchain cannot drift.
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2  # PINNED (devops.md §9, documented): v2.13.0 (2026-08-19) ships honnef.co/go/tools v0.8.0-rc.1 whose nilness pass panics ("unhandled builtin recover", crashes on sentry-go) — red gate with zero findings. Unpin when golangci-lint ships a non-rc staticcheck that passes on main.
+      # Dual plane: the Gitea runner image ships golangci-lint built with the
+      # portfolio Go toolchain (see /etc/ci-runner-tools.txt). It is NOT
+      # `go install`ed there — a run-time install overwrites the baked binary
+      # with one that cannot read Go 1.27 export data. GitHub-hosted runners
+      # bake nothing, so only there is the tool installed, at the pin. Both
+      # planes then assert the on-PATH binary against the pin.
+      - name: Install golangci-lint (GitHub-hosted runners only)
+        if: github.server_url == 'https://github.com'
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Assert golangci-lint pin
+        run: |
+          WANT=2.14.0
+          GOT=$(golangci-lint --version | sed -n 's/^golangci-lint has version \([0-9.]*\).*/\1/p')
+          if [ "${GOT}" != "${WANT}" ]; then
+            echo "golangci-lint on PATH is '${GOT}', pinned '${WANT}'"; exit 1
+          fi
 
       # .golangci.yml must enable staticcheck, errcheck, unused, ineffassign,
       # misspell, gocritic (devops.md §8) — the umbrella with the security
@@ -89,8 +101,28 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      # Dual plane (see the golangci-lint steps): baked on Gitea, installed at
+      # the pin on GitHub-hosted runners only. gosec's version is read from
+      # the binary's build info: `gosec --version` is not reliable.
+      - name: Install gosec and govulncheck (GitHub-hosted runners only)
+        if: github.server_url == 'https://github.com'
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Assert gosec and govulncheck pins
+        run: |
+          GOSEC_WANT=v2.29.0
+          GOSEC_GOT=$(go version -m "$(command -v gosec)" | sed -n 's/^[[:space:]]*mod[[:space:]]*github.com\/securego\/gosec\/v2[[:space:]]*\([^[:space:]]*\).*/\1/p')
+          if [ "${GOSEC_GOT}" != "${GOSEC_WANT}" ]; then
+            echo "gosec on PATH is '${GOSEC_GOT}', pinned '${GOSEC_WANT}'"; exit 1
+          fi
+          VULN_WANT=v1.8.0
+          VULN_GOT=$(go version -m "$(command -v govulncheck)" | sed -n 's/^[[:space:]]*mod[[:space:]]*golang.org\/x\/vuln[[:space:]]*\([^[:space:]]*\).*/\1/p')
+          if [ "${VULN_GOT}" != "${VULN_WANT}" ]; then
+            echo "govulncheck on PATH is '${VULN_GOT}', pinned '${VULN_WANT}'"; exit 1
+          fi
 
       # CUSTOMIZE (with justification): every -exclude rule below was checked
       # against the code; keep this list identical to GOSEC_EXCLUDE in the

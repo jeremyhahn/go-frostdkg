@@ -71,6 +71,7 @@ Examples:
 
 func init() {
 	participantCmd.Flags().StringVar(&participantCoordinator, "coordinator", "localhost:9000", "coordinator address")
+	participantCmd.Flags().String("listen", "", "libp2p address to listen on (default: an ephemeral port on all interfaces)")
 	participantCmd.Flags().IntVar(&participantID, "id", -1, "participant identifier (0-indexed)")
 	participantCmd.Flags().StringVarP(&participantOutput, "output", "o", "", "output file path for key share")
 	participantCmd.Flags().StringVar(&participantHostkey, "hostkey", "", "host secret key (hex, 32 bytes). Generated if not provided")
@@ -87,6 +88,9 @@ func init() {
 
 	if err := viper.BindPFlag("participant.coordinator", participantCmd.Flags().Lookup("coordinator")); err != nil {
 		panic(fmt.Sprintf("failed to bind coordinator flag: %v", err))
+	}
+	if err := viper.BindPFlag("participant.listen", participantCmd.Flags().Lookup("listen")); err != nil {
+		panic(fmt.Sprintf("failed to bind listen flag: %v", err))
 	}
 	if err := viper.BindPFlag("participant.id", participantCmd.Flags().Lookup("id")); err != nil {
 		panic(fmt.Sprintf("failed to bind id flag: %v", err))
@@ -299,6 +303,14 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		MaxMessageSize:    1024 * 1024, // 1MB
 		KeepAlive:         true,
 		KeepAliveInterval: 30 * time.Second,
+	}
+
+	// libp2p participants are hosts that listen as well as dial. The factory
+	// reads the bind address from cfg.Address, so for libp2p it carries the
+	// resolved listen address (flag > env > config file > ephemeral default);
+	// the coordinator is dialled by participant.Connect below.
+	if cfg.Protocol == transport.ProtocolLibp2p {
+		cfg.Address = viper.GetString("participant.listen")
 	}
 
 	// Create participant using factory

@@ -4,7 +4,7 @@
 # This container runs comprehensive end-to-end integration tests
 # in an isolated environment separate from the host OS.
 
-FROM golang:1.26.7-alpine
+FROM golang:1.27.2-alpine
 
 # Install test dependencies. `apk upgrade` first: the base image's own
 # packages lag alpine's security fixes (libcrypto3 3.5.7-r0, CVE-2026-14456,

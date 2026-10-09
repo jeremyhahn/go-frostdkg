@@ -9,10 +9,10 @@ GOVET=$(GOCMD) vet
 GOINSTALL=$(GOCMD) install
 
 # Version info
-VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
+BUILD_VERSION=$(shell cat VERSION 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)"
+LDFLAGS=-ldflags "-X main.Version=$(BUILD_VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)"
 
 # Docker parameters
 DOCKER_IMAGE=go-frostdkg
@@ -34,7 +34,7 @@ build: build-cli
 
 .PHONY: build-cli
 build-cli:
-	@echo "Building frostdkg CLI $(VERSION)..."
+	@echo "Building frostdkg CLI $(BUILD_VERSION)..."
 	@mkdir -p $(BIN_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BIN_DIR)/frostdkg ./cmd/frostdkg
 	@echo "Binary created: $(BIN_DIR)/frostdkg"
@@ -47,7 +47,7 @@ check:
 
 .PHONY: install
 install: build-cli
-	@echo "Installing frostdkg CLI $(VERSION)..."
+	@echo "Installing frostdkg CLI $(BUILD_VERSION)..."
 	$(GOINSTALL) $(LDFLAGS) ./cmd/frostdkg
 
 # =============================================================================
@@ -262,7 +262,7 @@ fmt-check:
 lint:
 	@echo "Running linters..."
 	$(GOVET) ./...
-	@go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run --timeout=5m ./...
+	@golangci-lint run --timeout=5m ./...
 
 .PHONY: tidy
 tidy:
@@ -299,7 +299,7 @@ GOSEC_EXCLUDE := G115,G118
 .PHONY: gosec
 gosec:
 	@echo "Running security scan with gosec..."
-	@go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude=$(GOSEC_EXCLUDE) -exclude-generated -severity medium -confidence medium -exclude-dir=test -exclude-dir=vendor ./...
+	@gosec -exclude=$(GOSEC_EXCLUDE) -exclude-generated -severity medium -confidence medium -exclude-dir=test -exclude-dir=vendor ./...
 
 # govulncheck is blocking (§8) and is also the §9 forcing function for toolchain
 # currency. Two findings have NO fixed version published upstream and are
@@ -315,12 +315,11 @@ GOVULN_ALLOW := GO-2024-3218 GO-2026-4479
 .PHONY: vulncheck
 vulncheck:
 	@echo "Running vulnerability check with govulncheck..."
-	@BIN=$$(mktemp -d); trap 'rm -rf "$$BIN"' EXIT; \
-	GOBIN=$$BIN go install golang.org/x/vuln/cmd/govulncheck@latest || { \
-		echo "govulncheck could not be installed — this is not a clean scan"; \
+	@command -v govulncheck >/dev/null || { \
+		echo "govulncheck is not on PATH (baked into the runner image) — this is not a clean scan"; \
 		exit 1; \
 	}; \
-	set +e; OUT=$$($$BIN/govulncheck ./... 2>&1); RC=$$?; set -e; \
+	set +e; OUT=$$(govulncheck ./... 2>&1); RC=$$?; set -e; \
 	echo "$$OUT"; \
 	if [ $$RC -ne 0 ] && [ $$RC -ne 3 ]; then \
 		echo ""; \
@@ -488,27 +487,26 @@ help:
 
 .DEFAULT_GOAL := help
 
-SUBMODULE_TAGS := 
+AGENT_GIT ?= agent-git.sh
+REPO_NAME ?= go-frostdkg
+RELEASE_REMOTE ?= origin
 # Builds never resolve through a workspace: modules come from Gitea tags
 # (dependency-resolution.md §2). Immunizes against stray go.work files.
 export GOWORK=off
 
 # ---- dependency-resolution.md targets (2026-08-13 cutover) ----
-# SUBMODULE_TAGS lists nested modules tagged in lockstep with the root
-# (release-versioning.md P2). deps-latest runs before compiling in a
-# consumer repo; release-alpha publishes this repo's next -alpha tag to dev.
-# deps-latest picks the highest tag INCLUDING -alpha prereleases — bare
-# 'go get @latest' ignores prereleases and would downgrade to legacy v0.0.0.
+# deps-latest runs before compiling in a consumer repo. It picks the highest
+# tag INCLUDING -alpha prereleases — bare 'go get @latest' ignores
+# prereleases and would downgrade to legacy v0.0.0.
 
-.PHONY: release-alpha deps-latest
+# release-alpha is the handbook's template v2 (release-versioning.md):
+#   make release-alpha VERSION=vX.Y.Z-alpha
+# The recipe lives in mk/release-alpha.mk and mk/release-common.mk, copied
+# verbatim from handbook software/templates/make/. The build version above is
+# BUILD_VERSION so it cannot shadow the VERSION argument.
+include mk/release-alpha.mk
 
-release-alpha:
-	@V=$$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0-alpha); \
-	NEXT=$$(echo $$V | awk -F'[.-]' '{printf "v%s.%s.%d-alpha", substr($$1,2), $$2, $$3+1}'); \
-	echo $${NEXT#v} > VERSION && git add VERSION && git commit -q -m "chore(release): $$NEXT" || true; \
-	git tag $$NEXT; \
-	for s in $(SUBMODULE_TAGS); do git tag "$$s/$$NEXT"; done; \
-	git push dev HEAD --tags && echo "Tagged $$NEXT"
+.PHONY: deps-latest
 
 deps-latest:
 	@GOWORK=off sh -c ' \

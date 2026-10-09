@@ -1,5 +1,8 @@
 # DHT Discovery for FROST-DKG
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built description of DHT peer discovery in `pkg/transport/libp2p`.
+
 This document describes the Distributed Hash Table (DHT) based peer discovery system used in the libp2p transport for FROST-DKG.
 
 ## Overview
@@ -382,7 +385,7 @@ peers, err := ds.FindSessionPeers(ctx, sessionID)
 
 ## Metrics & Monitoring
 
-The discovery service integrates with the Prometheus metrics collector:
+The discovery service does not record metrics itself. Callers can record discovery operations on the package's `MetricsCollector`:
 
 ```go
 // Track discovery operations

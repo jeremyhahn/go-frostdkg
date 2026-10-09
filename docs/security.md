@@ -1,5 +1,8 @@
 # Security Policy
 
+> **Status: NORMATIVE** · Scope: go-frostdkg · Last verified: 2026-10-09
+> Conflicts with this document are defects. Fix them here first.
+
 ## Supported Versions
 
 | Version | Supported |
@@ -24,7 +27,6 @@ We aim to respond to security reports within 48 hours and provide fixes for crit
 - Static analysis with `golangci-lint`
 - Vulnerability scanning with `govulncheck`
 - Race condition detection enabled in tests
-- 90%+ code coverage with unit and integration tests
 
 ### Cryptographic Security
 
@@ -39,7 +41,7 @@ We aim to respond to security reports within 48 hours and provide fixes for crit
 
 - Key share files created with `0600` permissions (owner read/write only)
 - Directory permissions set to `0750`
-- File path sanitization to prevent directory traversal
+- `verify --share` cleans the share path with `filepath.Clean`
 
 ## Known Vulnerabilities
 
@@ -47,7 +49,7 @@ We aim to respond to security reports within 48 hours and provide fixes for crit
 
 **Status:** No fix available (as of 2025-01)
 
-**Affected Package:** `github.com/libp2p/go-libp2p-kad-dht@v0.36.0`
+**Affected Package:** `github.com/libp2p/go-libp2p-kad-dht` (go.mod pins v0.38.0)
 
 **Description:** Content Censorship in the InterPlanetary File System (IPFS) via Kademlia DHT abuse.
 
@@ -120,14 +122,14 @@ The HostKey interface enables hardware-backed keys:
 
 Implementation requirements:
 - ECDH must compute raw shared point (no hashing)
-- Signatures must be deterministic Schnorr format
+- Signatures must follow the scheme `SoftwareHostKey` uses (ECDSA for P-256, Schnorr otherwise)
 - Public key serialization must match ciphersuite expectations
 
 ### Cryptographic Details
 
 **ECDH Pad Derivation**:
 ```
-pad = H4("FROST-DKG/ecdh pad" || nonce_order || shared_point)
+pad = hashToBytes(cs, "ecdh pad", nonce_order || shared_point)
 ```
 
 **Share Encryption**:

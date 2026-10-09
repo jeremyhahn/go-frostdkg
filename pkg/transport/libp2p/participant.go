@@ -84,12 +84,16 @@ func NewP2PParticipantFromTransportConfig(cfg *transport.Config) (*P2PParticipan
 		return nil, transport.ErrInvalidConfig
 	}
 
-	// Convert transport.Config to HostConfig
-	hostCfg := &HostConfig{
-		ListenAddrs: []string{"/ip4/0.0.0.0/tcp/0"}, // Use ephemeral port for participants
-		EnableNoise: true,
-		EnableTLS:   true,
-		EnableRelay: false,
+	// The defaults layer owns the literal (an ephemeral port, so a participant
+	// never collides with a coordinator on the same host); a configured
+	// address overrides it, resolved the same way the coordinator's is.
+	hostCfg := DefaultHostConfig()
+	if cfg.Address != "" {
+		listenAddr, err := ParticipantListenMultiaddr(cfg.Address)
+		if err != nil {
+			return nil, err
+		}
+		hostCfg.ListenAddrs = []string{listenAddr}
 	}
 
 	// Configure TLS if provided

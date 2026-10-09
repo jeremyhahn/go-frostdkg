@@ -49,8 +49,7 @@ func (f *DefaultTransportFactory) NewParticipant(proto transport.Protocol, cfg *
 	case transport.ProtocolQUIC:
 		return quic.NewQUICClient(cfg)
 	case transport.ProtocolLibp2p:
-		hostCfg := libp2p.DefaultHostConfig()
-		return libp2p.NewP2PParticipant(hostCfg)
+		return libp2p.NewP2PParticipantFromTransportConfig(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s (supported: grpc, http, quic, unix, libp2p)", proto)
 	}

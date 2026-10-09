@@ -1,5 +1,8 @@
 # Architecture Overview
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built package layout of go-frostdkg (`pkg/dkg`, `pkg/transport/*`). Package and error-file paths checked.
+
 go-frostdkg is a Go implementation of the FROST Distributed Key Generation protocol for threshold signatures, inspired by [ChillDKG](https://github.com/BlockstreamResearch/bip-frost-dkg). The system provides a modular architecture with pluggable transport layers and support for multiple FROST ciphersuites.
 
 ## System Architecture

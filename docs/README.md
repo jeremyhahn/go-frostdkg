@@ -1,5 +1,8 @@
 # go-frostdkg Documentation
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> Index of the go-frostdkg docs. Every link below resolves.
+
 FROST Distributed Key Generation implementation in Go.
 
 ## Contents

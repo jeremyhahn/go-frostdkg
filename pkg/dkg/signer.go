@@ -162,10 +162,9 @@ func (s *P256Signer) Verify(publicKey []byte, message []byte, signature []byte) 
 		return ErrInvalidPublicKey
 	}
 
-	pubKey := &ecdsa.PublicKey{
-		Curve: curve,
-		X:     x,
-		Y:     y,
+	pubKey, err := p256PublicKey(curve, x, y)
+	if err != nil {
+		return err
 	}
 
 	// Hash the message

@@ -1,5 +1,8 @@
 # CertEq Protocol
 
+> **Status: REFERENCE** · Last verified: 2026-10-09
+> As-built description of the CertEq step in `pkg/dkg`.
+
 Certificate Equality (CertEq) protocol implementation for FROST DKG.
 
 ## Overview
@@ -28,22 +31,28 @@ CertEq ensures all participants in a DKG session agree on the same output. Each 
 
 ```go
 func CertEqParticipantStep(
+    signer Signer,
     hostSeckey []byte,
     participantIndex int,
+    hostPubkeys [][]byte,
+    threshold int,
     transcript []byte,
-    signer Signer,
+    auxRand []byte,
 ) ([]byte, error)
 ```
 
 Creates a participant's signature over the transcript.
 
 **Parameters:**
-- `hostSeckey`: 32-byte host secret key
-- `participantIndex`: Participant's index (0-based)
-- `transcript`: Session transcript to sign
 - `signer`: Ciphersuite-specific signer
+- `hostSeckey`: Host secret key (`signer.SecretKeySize()` bytes)
+- `participantIndex`: Participant's index (0-based)
+- `hostPubkeys`: Ordered participant public keys (bound into the message)
+- `threshold`: Session threshold (bound into the message)
+- `transcript`: Session transcript to sign
+- `auxRand`: Auxiliary randomness for signing (may be nil)
 
-**Returns:** 64-byte signature
+**Returns:** Signature (`signer.SignatureSize()` bytes)
 
 ### CertEqCoordinatorStep
 
@@ -56,36 +65,41 @@ Assembles participant signatures into a certificate.
 **Parameters:**
 - `signatures`: Ordered slice of participant signatures
 
-**Returns:** Concatenated certificate (n × 64 bytes)
+**Returns:** Concatenated certificate (n × signature size bytes)
 
 ### CertEqVerify
 
 ```go
 func CertEqVerify(
+    signer Signer,
     hostPubkeys [][]byte,
+    threshold int,
     transcript []byte,
     certificate []byte,
-    signer Signer,
 ) error
 ```
 
 Verifies a CertEq certificate.
 
 **Parameters:**
+- `signer`: Ciphersuite-specific signer
 - `hostPubkeys`: Ordered participant public keys
+- `threshold`: Session threshold
 - `transcript`: Original transcript
 - `certificate`: Certificate to verify
-- `signer`: Ciphersuite-specific signer
 
 **Returns:** `nil` if valid, error with details otherwise
 
 ## Message Format
 
 ```
-message = prefix || participant_index || transcript
+message = prefix || participant_index || threshold || n || hostPubkeys || transcript
 
 prefix            = domain tag (33 bytes)
 participant_index = big-endian uint32 (4 bytes)
+threshold         = big-endian uint32 (4 bytes)
+n                 = big-endian uint32 (4 bytes), number of host public keys
+hostPubkeys       = concatenated host public keys (variable)
 transcript        = session transcript (variable)
 ```
 
@@ -94,8 +108,8 @@ transcript        = session transcript (variable)
 ```
 certificate = sig_0 || sig_1 || ... || sig_{n-1}
 
-Each signature is 64 bytes
-Total length = n × 64 bytes
+Each signature is signer.SignatureSize() bytes
+Total length = n × signer.SignatureSize() bytes
 ```
 
 ## Supported Signers
@@ -106,6 +120,7 @@ Total length = n × 64 bytes
 | P256Signer | P-256 | 64 bytes |
 | Ristretto255Signer | ristretto255 | 64 bytes |
 | Ed448Signer | Ed448 | 114 bytes |
+| Secp256k1Signer | secp256k1 | 65 bytes |
 
 ## Example
 
@@ -116,14 +131,15 @@ import "github.com/jeremyhahn/go-frostdkg/pkg/dkg"
 
 func main() {
     n := 3
+    threshold := 2
     transcript := []byte("session-transcript-data")
-    signer := dkg.NewEd25519Signer()
+    signer := &dkg.Ed25519Signer{}
 
     // Each participant signs
     signatures := make([][]byte, n)
     for i := 0; i < n; i++ {
         sig, err := dkg.CertEqParticipantStep(
-            hostSeckeys[i], i, transcript, signer,
+            signer, hostSeckeys[i], i, hostPubkeys, threshold, transcript, nil,
         )
         if err != nil {
             panic(err)
@@ -135,7 +151,7 @@ func main() {
     cert := dkg.CertEqCoordinatorStep(signatures)
 
     // Anyone can verify
-    if err := dkg.CertEqVerify(hostPubkeys, transcript, cert, signer); err != nil {
+    if err := dkg.CertEqVerify(signer, hostPubkeys, threshold, transcript, cert); err != nil {
         panic("certificate invalid")
     }
 }
@@ -145,13 +161,13 @@ func main() {
 
 | Error | Description |
 |-------|-------------|
-| `ErrNilSigner` | Signer is nil |
-| `ErrInvalidSecretKeyLength` | Secret key wrong length |
-| `ErrInvalidCertificateLength` | Certificate length mismatch |
+| `ErrSignerRequired` | Signer is nil |
+| `ErrInvalidSecretKey` | Secret key wrong length |
+| `ErrInvalidCertificateLength` | Certificate length mismatch (returned as `*CertificateLengthError`, which matches it via `errors.Is`) |
 | `InvalidSignatureError` | Signature verification failed (includes participant index) |
 
 ## Security
 
 - **Domain Separation**: Each message includes a unique prefix preventing signature reuse
-- **Participant Binding**: Signatures are bound to specific participant indices
+- **Participant Binding**: Signatures are bound to specific participant indices, the threshold, and the host public keys
 - **Transcript Binding**: Any change to the transcript invalidates all signatures
