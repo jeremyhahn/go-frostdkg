@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `make lint` and the CI Lint job run actionlint over `.github/workflows/`
+  (pinned v1.7.13), and the shellcheck findings it reported in `ci.yml` and
+  `release.yml` are fixed by quoting, not silenced (#47).
+
 ## [0.3.0-alpha] - 2026-08-15
 
 MINOR, not PATCH. The owner's ruling offered PATCH on the grounds that this is

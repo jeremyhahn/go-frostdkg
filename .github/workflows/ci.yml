@@ -123,6 +123,28 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run --timeout=5m ./...
 
+      # Workflow syntax, expressions and runner labels (devops.md, the
+      # `make lint` row). Dual plane like golangci-lint: baked in the Gitea
+      # runner image, installed at the pin on GitHub-hosted runners only, then
+      # asserted against the pin. Keep the version identical to
+      # ACTIONLINT_VERSION in the Makefile.
+      - name: Install actionlint (GitHub-hosted runners only)
+        if: github.server_url == 'https://github.com'
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.13-0.20260419144658-011a6d15e749
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Assert actionlint pin
+        run: |
+          WANT=1.7.13
+          GOT=$(actionlint --version | sed -n '1s/^v\{0,1\}\([0-9.]*\).*/\1/p')
+          if [ "${GOT}" != "${WANT}" ]; then
+            echo "actionlint on PATH is '${GOT}', pinned '${WANT}'"; exit 1
+          fi
+
+      - name: actionlint
+        run: actionlint
+
   security:
     name: Security
     runs-on: ubuntu-latest
@@ -370,9 +392,9 @@ jobs:
       - name: Run tests with race detector and coverage
         run: |
           mkdir -p coverage
-          PKGS=$(go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '/test/integration' | tr '\n' ' ')
-          if [ -z "${PKGS}" ]; then echo "no packages with tests"; exit 1; fi
-          go test -race -count=1 -timeout=900s -covermode=atomic -coverprofile=coverage/coverage.out ${PKGS}
+          mapfile -t PKGS < <(go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v -e '/test/integration' -e '^$')
+          if [ "${#PKGS[@]}" -eq 0 ]; then echo "no packages with tests"; exit 1; fi
+          go test -race -count=1 -timeout=900s -covermode=atomic -coverprofile=coverage/coverage.out "${PKGS[@]}"
           go tool cover -html=coverage/coverage.out -o coverage/coverage.html
           COVERAGE=$(go tool cover -func=coverage/coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: ${COVERAGE}%"

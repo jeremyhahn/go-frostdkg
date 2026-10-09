@@ -258,11 +258,30 @@ fmt-check:
 	fi
 	@echo "Code formatting OK"
 
+# actionlint validates .github/workflows (syntax, expressions, runner labels,
+# shellcheck on run: blocks) before CI does — devops.md, the `make lint` row.
+# actionlint is baked into the runner image (like golangci-lint): nothing is
+# installed over the network, a missing or off-pin binary fails the target.
+# Keep ACTIONLINT_VERSION identical to the actionlint steps in
+# .github/workflows/ci.yml.
+ACTIONLINT_VERSION := v1.7.13
+
 .PHONY: lint
 lint:
 	@echo "Running linters..."
 	$(GOVET) ./...
 	@golangci-lint run --timeout=5m ./...
+	@echo "Running actionlint on .github/workflows..."
+	@command -v actionlint >/dev/null 2>&1 || { \
+		echo "actionlint is not on PATH (baked into the runner image) — this is not a clean lint"; \
+		exit 1; \
+	}
+	@GOT=$$(actionlint --version | sed -n '1s/^v\{0,1\}\([0-9.]*\).*/\1/p'); \
+	if [ "$$GOT" != "$(ACTIONLINT_VERSION:v%=%)" ]; then \
+		echo "actionlint on PATH is '$$GOT', pinned '$(ACTIONLINT_VERSION:v%=%)'"; \
+		exit 1; \
+	fi
+	@actionlint
 
 .PHONY: tidy
 tidy:
@@ -462,7 +481,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  fmt                    - Format code"
 	@echo "  fmt-check              - Check code formatting (fails if not formatted)"
-	@echo "  lint                   - Run linters (go vet, golangci-lint)"
+	@echo "  lint                   - Run linters (go vet, golangci-lint, actionlint)"
 	@echo "  tidy                   - Tidy dependencies"
 	@echo ""
 	@echo "Security (devops.md §8):"
