@@ -29,6 +29,39 @@ on:
   # all, and this Gitea build exposes no rerun API (devops.md §5).
   workflow_dispatch:
 
+# Supersession control (#36). DEVIATION from ci-template v1, and NOT a
+# CUSTOMIZE block — recorded here so the next template sync does not silently
+# revert it. A newer head on the same ref cancels the older run instead of both
+# sitting in the shared runner's queue; portfolio-wide, 73% of runs are
+# superseded but still run to completion.
+#
+# MEASURED on Gitea 1.27.1 (2026-09-05/06), not assumed:
+#   - Workflow level, keyed on the REF, `cancel-in-progress: true` → Gitea
+#     cancels the OLDER run and the NEWEST completes. Verified live on both
+#     pull_request and push refs across seven repos.
+#   - `cancel-in-progress` does NOT evaluate expressions on 1.27.1: any
+#     non-empty value is truthy, so a `${{ }}` rendering "false" still cancels.
+#     Write the literal. (Group-key expressions DO evaluate.)
+#   - The group is per-REF, so a PR's runs and main's push runs never cancel
+#     each other, and two PRs never cancel each other. It leads with
+#     `github.workflow`, so the `CI` group cannot reach the separate
+#     `Code Review` workflow that also gates the merge.
+#   - Task #90 still holds — 1.27.1 publishes no `cancel` route at any path —
+#     and that is precisely WHY this is the only available mechanism. It is
+#     also why the staged fail-fast `needs:` ordering below stays: concurrency
+#     supersedes a whole run, it does not fail one fast from inside.
+#   - ADOPTION BOUNDARY, expect it once: Gitea groups a run by the workflow
+#     file OF THAT RUN, so a pre-adoption run is in no group and cannot be
+#     superseded by the first push after this lands. Check with
+#     `git show <sha>:.github/workflows/ci.yml | grep -c '^concurrency:'`
+#     before concluding a supersession failed.
+#   - Deliberately NOT applied elsewhere: cancelling release.yml mid-publish is
+#     destructive; opencode-review.yml already carries its own PR-keyed group;
+#     automerge.yml and claude-review.yml are out of scope.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write
