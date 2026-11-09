@@ -67,7 +67,7 @@ permissions:
   security-events: write
 
 env:
-  GO_VERSION: '1.27.2'        # latest stable — bumped portfolio-wide (devops.md §9)
+  GO_VERSION: '1.27.3'        # latest stable — bumped portfolio-wide (devops.md §9)
   COVERAGE_THRESHOLD: 60      # CUSTOMIZE: matches COVERAGE_THRESHOLD in the Makefile
   # No GOPROXY/GOSUMDB overrides here on purpose. The runner injects
   # GOPRIVATE=github.com/jeremyhahn/* plus the tokenised GIT_CONFIG rewrite to
@@ -162,13 +162,13 @@ jobs:
       - name: Install gosec and govulncheck (GitHub-hosted runners only)
         if: github.server_url == 'https://github.com'
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Assert gosec and govulncheck pins
         run: |
-          GOSEC_WANT=v2.29.0
+          GOSEC_WANT=v2.30.0
           GOSEC_GOT=$(go version -m "$(command -v gosec)" | sed -n 's/^[[:space:]]*mod[[:space:]]*github.com\/securego\/gosec\/v2[[:space:]]*\([^[:space:]]*\).*/\1/p')
           if [ "${GOSEC_GOT}" != "${GOSEC_WANT}" ]; then
             echo "gosec on PATH is '${GOSEC_GOT}', pinned '${GOSEC_WANT}'"; exit 1

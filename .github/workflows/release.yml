@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
   # No hardcoded registry: ghcr.io does not exist on the internal network, and
   # Gitea's registry lives on the same host and port as its web UI. Both are
   # derived from github.server_url at run time (devops.md §2).
@@ -226,7 +226,7 @@ jobs:
         run: |
           cat > Dockerfile.release << 'DOCKERFILE'
           # syntax=docker/dockerfile:1.7
-          FROM golang:1.27.2-alpine AS builder
+          FROM golang:1.27.3-alpine AS builder
           RUN apk add --no-cache git ca-certificates
           WORKDIR /build
           COPY go.mod go.sum ./
