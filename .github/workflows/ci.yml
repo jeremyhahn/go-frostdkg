@@ -83,6 +83,11 @@ jobs:
     # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
     # persists no token on that runner.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
+    # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+    # (no direct fallback) and go.mod and go.sum are read-only.
+    env:
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     steps:
       - uses: actions/checkout@v6
         with:
@@ -156,6 +161,11 @@ jobs:
     # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
     # persists no token on that runner.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
+    # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+    # (no direct fallback) and go.mod and go.sum are read-only.
+    env:
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     # No `needs` (v1.14): starts with lint and build, not after them.
     steps:
       - uses: actions/checkout@v6
@@ -296,6 +306,11 @@ jobs:
     # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
     # persists no token on that runner.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
+    # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+    # (no direct fallback) and go.mod and go.sum are read-only.
+    env:
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     strategy:
       matrix:
         include:
@@ -372,6 +387,10 @@ jobs:
     env:
       GOFIPS140: latest
       GODEBUG: fips140=on
+      # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+      # (no direct fallback) and go.mod and go.sum are read-only.
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     steps:
       - uses: actions/checkout@v6
         with:
@@ -393,6 +412,11 @@ jobs:
     # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
     # persists no token on that runner.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
+    # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+    # (no direct fallback) and go.mod and go.sum are read-only.
+    env:
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     # No `needs` (v1.14): every job starts at once; CI Gate fails closed on
     # any of them.
     timeout-minutes: 30       # CUSTOMIZE: suite runs in ~1m; 30m is headroom
@@ -467,6 +491,11 @@ jobs:
     # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
     # persists no token on that runner.
     runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
+    # InfoSec O-2: on the pool path, modules come from proxy.golang.org only
+    # (no direct fallback) and go.mod and go.sum are read-only.
+    env:
+      GOPROXY: https://proxy.golang.org
+      GOFLAGS: -mod=readonly
     # needs: [test] is load-bearing, not ordering taste. This suite and the unit
     # suite both stand up a libp2p coordinator, and DefaultTransportFactory pins
     # it to a fixed 0.0.0.0:9000; the runner gives job containers the HOST
