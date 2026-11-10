@@ -79,9 +79,14 @@ env:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
@@ -147,10 +152,15 @@ jobs:
 
   security:
     name: Security
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     # No `needs` (v1.14): starts with lint and build, not after them.
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
@@ -282,7 +292,10 @@ jobs:
     # `go build ./...` is widened to the release target matrix. Written out
     # literally — Gitea does not expand a computed matrix (devops.md §1).
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     strategy:
       matrix:
         include:
@@ -306,6 +319,8 @@ jobs:
             ext: ''
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
@@ -348,7 +363,10 @@ jobs:
 
   fips:
     name: FIPS
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     # No `needs` (v1.14): starts with lint and build, not after them.
     timeout-minutes: 30
     env:
@@ -356,6 +374,8 @@ jobs:
       GODEBUG: fips140=on
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
@@ -369,12 +389,17 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     # No `needs` (v1.14): every job starts at once; CI Gate fails closed on
     # any of them.
     timeout-minutes: 30       # CUSTOMIZE: suite runs in ~1m; 30m is headroom
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
@@ -438,7 +463,10 @@ jobs:
   # first-party modules through a BuildKit secret (test/integration/Dockerfile).
   integration-test:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    # Docker-free: the self-hosted bigdisk runner for a push to main or a PR
+    # from this repository, ubuntu-latest otherwise (fork PRs). The checkout
+    # persists no token on that runner.
+    runs-on: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","bigdisk"]') || 'ubuntu-latest' }}
     # needs: [test] is load-bearing, not ordering taste. This suite and the unit
     # suite both stand up a libp2p coordinator, and DefaultTransportFactory pins
     # it to a fixed 0.0.0.0:9000; the runner gives job containers the HOST
@@ -450,6 +478,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v6
         with:
