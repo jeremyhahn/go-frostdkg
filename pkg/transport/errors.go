@@ -185,11 +185,8 @@ var (
 	// material.
 	//
 	// Every network transport (quic, grpc, unix, http, libp2p, mcp) returns
-	// this from RunDKG. They previously returned a DKGResult filled with a
-	// fixed pattern derived from the participant index and a nil error, which
-	// a caller could not distinguish from a real ceremony. Failing closed is
-	// the only safe behaviour until the transports are wired to the real
-	// pkg/dkg driver.
+	// this from RunDKG rather than a result a caller could mistake for a real
+	// ceremony.
 	//
 	// The in-memory transport is exempt: it is a test double, and its
 	// deterministic result is the point.

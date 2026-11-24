@@ -74,15 +74,7 @@ func TestListenMultiaddr_RejectsUnusableAddresses(t *testing.T) {
 	}
 }
 
-// TestDNSProtocolFor is where the address-family choice is pinned. It takes
-// resolved addresses rather than a hostname on purpose: an AAAA-only name is
-// not something a test can conjure hermetically, and the decision being tested
-// is the family one, not the lookup.
-//
-// The family matters because libp2p refuses the neutral /dns protocol for a
-// listen address ("can only dial TCP over IPv4 or IPv6"), so the multiaddr has
-// to commit to dns4 or dns6, and committing to dns4 for an AAAA-only host
-// makes it unbindable.
+// TestDNSProtocolFor checks the dns4/dns6 choice from resolved addresses; libp2p refuses /dns for listen addresses.
 func TestDNSProtocolFor(t *testing.T) {
 	tests := []struct {
 		name string

@@ -205,9 +205,7 @@ func CertEqVerify(signer Signer, hostPubkeys [][]byte, threshold int, transcript
 		}
 	}
 
-	// SECURITY: Verify ALL signatures before returning to prevent timing attacks.
-	// Early return would leak information about which signature is invalid.
-	// We collect errors and return the first one after all verifications complete.
+	// Verify every signature before returning so timing does not reveal which one failed.
 	var firstError error
 	firstErrorIndex := -1
 

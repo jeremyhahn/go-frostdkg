@@ -204,15 +204,7 @@ func (c *HTTPClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*
 	return result, nil
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (c *HTTPClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }
@@ -280,12 +272,7 @@ func (c *HTTPClient) joinSession(ctx context.Context, params *transport.DKGParam
 	return &sessionInfo, nil
 }
 
-// executeRound1 executes Round1 of the DKG protocol.
-//
-// real, working protocol plumbing exercised end to end by http_test.go against a
-// live server; it is unreferenced only from the non-test build, which is why the
-// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
-// needs exactly this.
+// executeRound1 executes round 1; tested by http_test.go and kept for wiring the pkg/dkg driver.
 //
 //nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) executeRound1(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.Round1AggMessage, error) {
@@ -341,12 +328,7 @@ func (c *HTTPClient) executeRound1(ctx context.Context, params *transport.DKGPar
 	}
 }
 
-// executeRound2 executes Round2 of the DKG protocol.
-//
-// real, working protocol plumbing exercised end to end by http_test.go against a
-// live server; it is unreferenced only from the non-test build, which is why the
-// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
-// needs exactly this.
+// executeRound2 executes round 2; tested by http_test.go and kept for wiring the pkg/dkg driver.
 //
 //nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) executeRound2(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage, round1Agg *transport.Round1AggMessage) error {
@@ -389,12 +371,7 @@ func (c *HTTPClient) executeRound2(ctx context.Context, params *transport.DKGPar
 	}
 }
 
-// submitCertEqSignature submits a CertEq signature.
-//
-// real, working protocol plumbing exercised end to end by http_test.go against a
-// live server; it is unreferenced only from the non-test build, which is why the
-// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
-// needs exactly this.
+// submitCertEqSignature submits a CertEq signature; tested by http_test.go and kept for wiring the pkg/dkg driver.
 //
 //nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) submitCertEqSignature(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) error {
@@ -412,12 +389,7 @@ func (c *HTTPClient) submitCertEqSignature(ctx context.Context, params *transpor
 	return err
 }
 
-// retrieveCertificate retrieves the final certificate.
-//
-// real, working protocol plumbing exercised end to end by http_test.go against a
-// live server; it is unreferenced only from the non-test build, which is why the
-// linter flags it. Kept deliberately: wiring the transports to the pkg/dkg driver
-// needs exactly this.
+// retrieveCertificate retrieves the final certificate; tested by http_test.go and kept for wiring the pkg/dkg driver.
 //
 //nolint:unused // Not yet wired into RunDKG — see software task #61. This is
 func (c *HTTPClient) retrieveCertificate(ctx context.Context, sessionInfo *transport.SessionInfoMessage) ([]byte, error) {

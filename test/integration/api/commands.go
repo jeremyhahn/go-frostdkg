@@ -318,8 +318,7 @@ func (a *CompareResultsAction) Execute(ctx context.Context) error {
 			}
 		}
 
-		// Secret shares should be DIFFERENT (each participant has their own).
-		// Both enclaves are opened only for the length of the comparison.
+		// Secret shares must differ; each enclave is opened only for the comparison.
 		if result.SecretShare.Size() == first.SecretShare.Size() {
 			allMatch := true
 			if err := secmem.WithSecret(result.SecretShare, func(mine []byte) error {

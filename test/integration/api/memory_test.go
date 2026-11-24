@@ -301,10 +301,7 @@ func TestMemoryTransport_UsingTestRunner(t *testing.T) {
 		cleanup.AddParticipant(p)
 	}
 
-	// Start coordinator BEFORE using the test runner, so it uses the background
-	// context which won't be cancelled when the test runner's context expires.
-	// This is important because the coordinator's processMessages goroutine
-	// needs to keep running after the test runner completes.
+	// Start the coordinator with the background context so it outlives the test runner's context.
 	if err := coord.Start(ctx); err != nil {
 		t.Fatalf("Failed to start coordinator: %v", err)
 	}

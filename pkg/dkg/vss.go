@@ -291,10 +291,7 @@ func VSSCommitmentFromBytes(grp group.Group, b []byte, t int) (*VSSCommitment, e
 		end := start + elemLen
 		elemBytes := b[start:end]
 
-		// Check if this is the zero/identity element (all zeros)
-		// This is needed for proper round-trip serialization since
-		// some groups serialize identity as all zeros
-		// Use constant-time comparison to prevent timing side-channels
+		// Some groups serialize identity as all zeros; detect it in constant time.
 		isZero := subtle.ConstantTimeCompare(elemBytes, make([]byte, len(elemBytes))) == 1
 
 		if isZero {

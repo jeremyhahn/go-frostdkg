@@ -39,14 +39,14 @@
 //
 // # Transport Security
 //
-// IMPORTANT: This implementation follows Zcash FROST's security model:
+// This implementation follows Zcash FROST's security model:
 //
 // Round 1 packages (commitments and proofs) can be sent over a public broadcast
 // channel as they contain no secret information.
 //
-// Round 2 packages (secret shares) MUST be sent over a CONFIDENTIAL and
-// AUTHENTICATED channel. The recommended approach is to use TLS 1.3, QUIC,
-// or another secure transport protocol. Application-level encryption is NOT
+// Round 2 packages (secret shares) MUST be sent over a confidential and
+// authenticated channel. The recommended approach is to use TLS 1.3, QUIC,
+// or another secure transport protocol. Application-level encryption is not
 // provided by default - transport security is delegated to the network layer.
 //
 // # Memory Security
@@ -250,10 +250,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	identifierScalar := indexToIdentifierScalar(grp, index)
 	identifierBytes := grp.SerializeScalar(identifierScalar)
 
-	// Generate deterministic nonce following RFC 6979 pattern for reproducibility:
-	// k = H3("FROST-DKG/pop nonce" || secret || pubkey || identifier)
-	// Including pubkey provides additional domain separation and follows
-	// RFC 6979 best practices for deterministic signature nonces.
+	// Deterministic nonce: k = H3("FROST-DKG/pop nonce" || secret || pubkey || identifier).
 	secretBytes := grp.SerializeScalar(secret)
 	defer secmem.ZeroBytes(secretBytes)
 	pubkeyBytes, err := grp.SerializeElement(pubkey)
@@ -278,8 +275,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 		return nil, err
 	}
 
-	// RFC 9591 Challenge: c = HDKG(identifier || verifying_key || R)
-	// where identifier is serialized as a scalar
+	// RFC 9591 challenge: c = HDKG(identifier || verifying_key || R), identifier as a scalar.
 	challengeInput := make([]byte, len(identifierBytes)+len(pubkeyBytes)+len(RBytes))
 	copy(challengeInput, identifierBytes)
 	copy(challengeInput[len(identifierBytes):], pubkeyBytes)
@@ -302,12 +298,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	return pop, nil
 }
 
-// indexToIdentifierScalar converts a 0-indexed participant index to a
-// 1-indexed RFC 9591 identifier scalar.
-//
-// In RFC 9591, identifiers are 1-indexed non-zero scalars. This function
-// takes a 0-indexed participant index (0, 1, 2, ...) and converts it to
-// the corresponding RFC 9591 identifier (1, 2, 3, ...) as a scalar.
+// indexToIdentifierScalar converts a 0-based participant index to the 1-based RFC 9591 identifier scalar.
 func indexToIdentifierScalar(grp group.Group, index int) group.Scalar {
 	// Convert 0-indexed to 1-indexed: identifier = index + 1
 	identifier := index + 1
@@ -768,10 +759,7 @@ type FROSTDKGEncCoordinatorMsg struct {
 	AllPubnonces [][]byte
 }
 
-// deriveHostScalar derives the ECDH scalar from the host secret key.
-// This must be consistent with how the corresponding Signer derives its internal scalar.
-// - P256: uses the key bytes directly as the scalar (ECDSA private key format)
-// - Ed25519, Ristretto255, Ed448, Secp256k1: use H3(secretKey) to derive the scalar
+// deriveHostScalar derives the ECDH scalar as the Signer does: P256 uses the key bytes, the other suites H3(secretKey).
 func deriveHostScalar(cs ciphersuite.Ciphersuite, hostSeckey []byte) (group.Scalar, error) {
 	grp := cs.Group()
 
@@ -925,9 +913,7 @@ func FROSTDKGEncParticipantRound1(
 			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 
-		// For encryption, we use our own pubnonce for both positions since
-		// the receiver doesn't have their pubnonce yet. The receiver will
-		// use our pubnonce (from coordinator) for both positions to match.
+		// Use our pubnonce in both positions; the receiver does the same with ours from the coordinator.
 		pad, err := frostDKGECDH(cs, hostSeckey, pubnonce, theirPubkey, pubnonce, true)
 		if err != nil {
 			secmem.ZeroBytes(shareBytes)
@@ -1037,9 +1023,7 @@ func FROSTDKGEncParticipantRound2(
 	myIndex := state.Index
 	scalarLen := grp.ScalarLength()
 
-	// The coordinator is untrusted: validate every slice this loop indexes by j
-	// before indexing it, or a short message from the coordinator panics the
-	// participant instead of failing the round.
+	// The coordinator is untrusted: validate every slice indexed by j so a short message fails the round instead of panicking.
 	if len(coordMsg.AllPubnonces) != n {
 		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
 	}
@@ -1590,9 +1574,7 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 		return nil, nil, ErrFROSTDKGDecryptionFailed
 	}
 
-	// The coordinator is untrusted: validate every slice this loop indexes by j
-	// before indexing it, or a short message from the coordinator panics the
-	// participant instead of failing the round.
+	// The coordinator is untrusted: validate every slice indexed by j so a short message fails the round instead of panicking.
 	if len(coordMsg.AllPubnonces) != n {
 		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
 	}

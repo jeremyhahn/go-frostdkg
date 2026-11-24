@@ -151,13 +151,7 @@ func TestDKGWithPKCS11_AllCiphersuites(t *testing.T) {
 func testDKGWithPKCS11(t *testing.T, ctx context.Context, config *PKCS11Config, cs Ciphersuite) {
 	t.Skip("TODO: Implement full DKG test with PKCS#11 backend")
 
-	// Test will include:
-	// 1. Initialize PKCS#11 session
-	// 2. Generate host keys in HSM
-	// 3. Run DKG protocol using HSM-backed keys
-	// 4. Verify shares are stored in HSM
-	// 5. Perform threshold signing operation
-	// 6. Verify signature correctness
+	// Planned: HSM host keys, DKG, shares in the HSM, threshold signing and verification.
 }
 
 // TestKeyGenerationPKCS11 tests key generation within PKCS#11 token.
@@ -204,23 +198,14 @@ func TestSecretShareStoragePKCS11(t *testing.T) {
 func TestThresholdSigningPKCS11(t *testing.T) {
 	t.Skip("TODO: Implement threshold signing test")
 
-	// Test will include:
-	// 1. Initialize t-of-n DKG with HSM keys
-	// 2. Complete DKG successfully
-	// 3. Select t participants for signing
-	// 4. Perform threshold signing operation
-	// 5. Verify final signature
+	// Planned: t-of-n DKG with HSM keys, then threshold signing by t participants.
 }
 
 // TestKeyRefreshPKCS11 tests proactive key refresh with HSM backend.
 func TestKeyRefreshPKCS11(t *testing.T) {
 	t.Skip("TODO: Implement key refresh test")
 
-	// Test will include:
-	// 1. Run initial DKG
-	// 2. Perform key refresh
-	// 3. Verify new shares work for signing
-	// 4. Verify old shares no longer valid
+	// Planned: DKG, key refresh, and signing with new shares but not old ones.
 }
 
 // TestShareRepairPKCS11 tests share repair/recovery with HSM backend.

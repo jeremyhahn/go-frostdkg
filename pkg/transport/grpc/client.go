@@ -302,15 +302,7 @@ func (c *GRPCClient) waitForSessionInfo(ctx context.Context) (*transport.Session
 	}
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (c *GRPCClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }

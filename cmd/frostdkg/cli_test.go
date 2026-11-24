@@ -888,10 +888,7 @@ func TestRunCoordinatorInvalidProtocol(t *testing.T) {
 	coordinatorListen = "localhost:9999"
 	protocol = "invalid-protocol"
 	verbose = false
-	// runCoordinator refuses a network transport without TLS before it ever
-	// reaches the factory that validates the protocol name, so without this the
-	// assertion below sees the TLS error instead. Nothing is dialled here — the
-	// protocol is rejected first — so this only satisfies the gate.
+	// runCoordinator rejects a network transport without TLS before the protocol check, so satisfy the TLS gate here.
 	insecure = true
 	defer func() { insecure = false }()
 
@@ -2498,12 +2495,7 @@ func TestAllProtocolsParticipant(t *testing.T) {
 
 // TestCertgenCertFileWriteError tests certificate file write error
 func TestCertgenCertFileWriteError(t *testing.T) {
-	// The fault is a directory sitting where the .crt belongs, so the write
-	// fails with EISDIR. It used to be a read-only parent directory, which
-	// proves nothing in CI: job containers run as root, root bypasses
-	// discretionary permission checks, the write succeeds and the test fails
-	// only on the runner (testing-guidelines.md §Fault Injection). EISDIR holds
-	// for every uid.
+	// A directory at the .crt path makes the write fail with EISDIR for every uid, root included.
 	tmpDir := t.TempDir()
 
 	certgenType = "ecdsa"
@@ -2524,11 +2516,7 @@ func TestCertgenCertFileWriteError(t *testing.T) {
 
 // TestConfigInitWriteError tests config init file write error
 func TestConfigInitWriteError(t *testing.T) {
-	// A directory occupying the config path: MkdirAll of its parent still
-	// succeeds, so the run reaches the write and fails there with EISDIR —
-	// which is the step this test is about, and which root cannot bypass. A
-	// read-only parent directory (the previous approach) both skipped the write
-	// entirely and did nothing at all under CI's root uid.
+	// A directory at the config path makes the write fail with EISDIR, which root cannot bypass.
 	tmpDir := t.TempDir()
 	configOutput = filepath.Join(tmpDir, "config.yaml")
 	// --force is required, not incidental: the directory standing in for the
@@ -2584,11 +2572,7 @@ func TestCertgenKeyFileWriteError(t *testing.T) {
 	certgenHosts = []string{"localhost"}
 	verbose = false
 
-	// The certificate is written before the key, so putting a directory at the
-	// key path exercises exactly the leg this test names: the cert write
-	// succeeds and the key write fails with EISDIR. Root bypasses a read-only
-	// key file, which is why the previous version passed locally and failed in
-	// CI (testing-guidelines.md §Fault Injection).
+	// The cert is written before the key, so a directory at the key path fails only the key write.
 	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, certgenName+".key"), 0750))
 
 	err := runCertgen(certgenCmd, nil)
@@ -2704,10 +2688,7 @@ func TestViperBindings(t *testing.T) {
 func TestCoordinatorDefaultValues(t *testing.T) {
 	listenFlag := coordinatorCmd.Flags().Lookup("listen")
 	require.NotNil(t, listenFlag)
-	// Loopback, not 0.0.0.0: a coordinator must not be reachable from off-box
-	// merely because someone omitted --listen. Exposing it is the deliberate
-	// act. Note cmd/frostdkg/factory.go still compares Address against the old
-	// "0.0.0.0:9000" default as a sentinel — see task #25.
+	// Loopback by default: exposing a coordinator off-box must be deliberate.
 	assert.Equal(t, "127.0.0.1:9000", listenFlag.DefValue)
 
 	ciphersuiteFlag := coordinatorCmd.Flags().Lookup("ciphersuite")

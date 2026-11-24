@@ -16,15 +16,9 @@
 
 // Package libp2p provides a peer-to-peer transport implementation using libp2p.
 //
-// EXPERIMENTAL — this transport does NOT run the DKG ceremony. It implements
+// Experimental: this transport does not run the DKG ceremony. It implements
 // connection setup, session join and message relay only; Participant.RunDKG
 // returns transport.ErrDKGNotImplemented and no key material.
-//
-// Until v0.3.0-alpha RunDKG returned a DKGResult built from a fixed pattern
-// derived from the participant index, with a nil error — indistinguishable
-// from a real ceremony and reconstructable by anyone. Failing closed replaces
-// that. Wiring this transport to the real pkg/dkg driver is tracked as
-// software task #61.
 //
 // See package transport for the full statement.
 //
@@ -199,11 +193,6 @@
 //   - Low latency: Direct peer-to-peer connections when possible
 //   - High throughput: Efficient message framing and streaming
 //   - Minimal overhead: TLS configuration adds negligible performance cost
-//
-// Benchmark results (typical):
-//   - Host creation: ~12ms
-//   - Message framing: ~20μs per message
-//   - TLS overhead: <1% compared to default security
 //
 // # Error Handling
 //

@@ -205,8 +205,7 @@ Stated so the list above can be audited rather than assumed:
   question.
 - **`SecretPackage` and `SecureScalar`** (`pkg/dkg/zeroize.go`) still hold
   plain `[]byte`. They are exported but unused — no caller anywhere in this
-  repository — and removing exported symbols is not a change to make in
-  passing. Tracked as issue #25.
+  repository — and removing exported symbols is a separate change (#25).
 - **Hex-encoded key material in the CLI's output file** is a `string` on its way
   to disk. Strings cannot be scrubbed soundly, so the exposure is the file's
   `0600` mode, not the in-memory copy.

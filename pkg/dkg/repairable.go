@@ -235,34 +235,7 @@ func RepairShareStep3(
 	return recoveredShare, nil
 }
 
-// computeLagrangeCoefficientForHelper computes the Lagrange coefficient for a
-// specific helper at a given evaluation point.
-//
-// This computes L_i(x) for helper at index helperIdx, where:
-//
-//	L_i(x) = product((x - x_j) / (x_i - x_j)) for all j != i
-//
-// The Lagrange basis polynomial allows interpolation: given values f(x_0), f(x_1), ..., f(x_n),
-// we can compute f(x) = sum(f(x_i) * L_i(x)) for any x.
-//
-// In the RTS context, this is used to compute each helper's contribution to the
-// recovering participant's share:
-//
-//	share_participant = sum(L_i(x_participant) * share_i) for all helpers i
-//
-// Parameters:
-//   - xCoords: All helper x-coordinates (as scalars)
-//   - x: The evaluation point (recovering participant's x-coordinate)
-//   - helperIdx: The index of the helper in xCoords
-//   - grp: The group for scalar operations
-//
-// Returns:
-//   - The Lagrange coefficient L_i(x)
-//   - An error if computation fails
-//
-// Errors:
-//   - ErrInvalidParticipantIndex: Invalid helper index
-//   - ErrZeroScalar: Division by zero (duplicate x-coordinates)
+// computeLagrangeCoefficientForHelper returns L_i(x) = prod((x - x_j) / (x_i - x_j)) for j != i.
 func computeLagrangeCoefficientForHelper(
 	xCoords []group.Scalar,
 	x group.Scalar,

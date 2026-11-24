@@ -1081,7 +1081,7 @@ func TestConnectionPoolNotifieeWithRealHosts(t *testing.T) {
 	stats = pool.Stats()
 	assert.Equal(t, 0, stats.ActivePeers, "Connection should be untracked after disconnect")
 
-	// Should no longer be able to reuse the connection
+	// The connection cannot be reused now.
 	assert.False(t, pool.ShouldReuseConnection(host2.ID()))
 }
 

@@ -153,9 +153,7 @@ func TestSealCopy_EmptyInput(t *testing.T) {
 	require.Nil(t, sealCopy([]byte{}))
 }
 
-// TestParticipantStateZeroize_DestroysTheOwnedSeed covers the state secrets:
-// the state OWNS what it sealed, so releasing it destroys the enclave, while
-// the caller's original slice is untouched.
+// TestParticipantStateZeroize_DestroysTheOwnedSeed checks Zeroize destroys the state's sealed copy and leaves the caller's slice.
 func TestParticipantStateZeroize_DestroysTheOwnedSeed(t *testing.T) {
 	seed := make([]byte, 32)
 	_, err := rand.Read(seed)
@@ -217,17 +215,7 @@ func (r *capturingRNG) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// TestGenerateSoftwareHostKey_ZeroesItsOwnBuffer covers the producer side of
-// the borrow rule, and it is the case the CLI fix in this PR missed.
-//
-// NewSoftwareHostKeyWithRNG seals a COPY and leaves its input alone, because
-// the key it is usually handed belongs to its caller. A caller that generated
-// the buffer itself therefore has to zero it — otherwise a freshly generated
-// host key sits in plain heap memory until the GC gets to it, which is what the
-// enclave exists to prevent.
-//
-// Unlike the CLI's function-local, this one IS observable: the RNG is injected,
-// so the test can hold the exact slice the key was generated into.
+// TestGenerateSoftwareHostKey_ZeroesItsOwnBuffer checks the generated key buffer is zeroed after sealing.
 func TestGenerateSoftwareHostKey_ZeroesItsOwnBuffer(t *testing.T) {
 	rng := &capturingRNG{fill: 0xA5}
 
@@ -249,9 +237,7 @@ func TestGenerateSoftwareHostKey_ZeroesItsOwnBuffer(t *testing.T) {
 	require.NotEmpty(t, sig)
 }
 
-// TestGenerateSoftwareHostKey_ZeroesItsBufferOnFailure covers the path that was
-// already correct, so a refactor cannot quietly drop it. The RNG fills the
-// buffer and THEN fails, so there is real key material to leave behind.
+// TestGenerateSoftwareHostKey_ZeroesItsBufferOnFailure checks the buffer is zeroed when the RNG fails after filling it.
 func TestGenerateSoftwareHostKey_ZeroesItsBufferOnFailure(t *testing.T) {
 	rng := &capturingRNG{fill: 0xA5, err: io.ErrUnexpectedEOF}
 

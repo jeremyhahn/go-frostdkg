@@ -38,11 +38,7 @@ func TestSealSecret_SealsTheContent(t *testing.T) {
 	}))
 }
 
-// TestSealSecret_LeavesTheCallerSlice is the borrow rule at the transport
-// boundary. secmem.NewSecretBytes ZEROES the slice it is given, so sealing a
-// caller's buffer directly would wipe memory the caller still owns — a caller
-// reading several participants' keys out of one decoded document would find
-// the rest of it destroyed. SealSecret copies for exactly that reason.
+// TestSealSecret_LeavesTheCallerSlice checks SealSecret copies instead of zeroing the caller's buffer.
 func TestSealSecret_LeavesTheCallerSlice(t *testing.T) {
 	original := []byte("a 32-byte host secret key ......")
 	before := append([]byte(nil), original...)

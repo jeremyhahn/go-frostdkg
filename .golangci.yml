@@ -3,10 +3,7 @@ version: "2"
 run:
   modules-download-mode: readonly
 
-# devops.md §8 requires staticcheck, errcheck, unused, ineffassign, misspell and
-# gocritic. The first four plus govet are golangci-lint v2's "standard" default
-# set; they are listed explicitly so the mandatory suite is readable here rather
-# than inferred from the tool's defaults.
+# The required linter suite, listed explicitly rather than inferred from the defaults.
 linters:
   enable:
     - errcheck

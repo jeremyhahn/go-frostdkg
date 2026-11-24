@@ -77,6 +77,5 @@ func (f *DefaultTransportFactory) NewCoordinator(proto transport.Protocol, cfg *
 	}
 }
 
-// Default factory instance used by the package.
-// Can be overridden in tests for dependency injection.
+// Default factory instance; tests may override it.
 var defaultFactory TransportFactory = &DefaultTransportFactory{}

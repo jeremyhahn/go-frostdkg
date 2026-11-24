@@ -24,10 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Zeroize nils both the secret key bytes and the derived scalar, and the
-// private-key operations dereference them. Using a zeroized key must fail
-// closed with a typed error; it previously panicked with a nil dereference
-// inside the group arithmetic.
+// Using a zeroized key fails closed with a typed error.
 func TestSoftwareHostKey_Sign_AfterZeroizeReturnsError(t *testing.T) {
 	hostKey, err := GenerateSoftwareHostKey(ristretto255_sha512.New())
 	require.NoError(t, err)

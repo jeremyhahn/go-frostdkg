@@ -84,16 +84,7 @@ type MCPSession struct {
 	mu               sync.RWMutex
 }
 
-// requireJoinedParticipant rejects a submission whose participant index was
-// never registered by dkg_join_session.
-//
-// The index arrives from the wire and is later used to index aggregation
-// slices sized at Config.NumParticipants, so an unregistered or out-of-range
-// value must be refused before it reaches them. Registration assigns indices
-// densely from zero and caps them at NumParticipants, so membership here also
-// establishes that the index is in range.
-//
-// The caller must hold s.mu.
+// requireJoinedParticipant rejects an index dkg_join_session never registered, which also bounds it; the caller holds s.mu.
 func (s *MCPSession) requireJoinedParticipant(idx int) error {
 	if _, ok := s.Participants[idx]; !ok {
 		return NewToolError(int(ErrorCodeInvalidParams), "unknown participant index")

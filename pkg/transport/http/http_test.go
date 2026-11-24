@@ -1240,11 +1240,7 @@ func TestRunDKG(t *testing.T) {
 	}
 	defer func() { _ = client1.Disconnect() }()
 
-	// HTTP carries the DKG messages but does not run the ceremony, so RunDKG
-	// fails closed (software task #61). Getting here proves connect and join
-	// worked; what must not come back is key material. The old assertion
-	// checked only the LENGTH of SecretShare, which the fabricated
-	// byte(0x42+idx) fill satisfied.
+	// Connect and join worked; RunDKG must fail closed rather than return key material.
 	result1, err := client1.RunDKG(ctx, params1)
 	if !errors.Is(err, transport.ErrDKGNotImplemented) {
 		t.Fatalf("client 1: expected ErrDKGNotImplemented, got err=%v result=%+v", err, result1)

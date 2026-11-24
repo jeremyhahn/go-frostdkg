@@ -546,9 +546,7 @@ func TestP256SignWithCustomRNG(t *testing.T) {
 
 // TestGetCiphersuiteByID tests the getCiphersuiteByID function.
 func TestGetCiphersuiteByID(t *testing.T) {
-	// Every supported ciphersuite must resolve, named by its constant rather
-	// than a second copy of the literal. P256 used to be missing from the
-	// switch — the one FIPS-approved suite, returning nil into verification.
+	// Every supported ciphersuite resolves, named by its constant.
 	testCases := []struct {
 		id       string
 		expected bool

@@ -36,9 +36,7 @@ type P2PCoordinator struct {
 	config     *transport.SessionConfig
 	serializer *transport.Serializer
 
-	// Participant management. participants holds the LIVE connections and
-	// shrinks on disconnect; assignedIndexes is the session-long binding of a
-	// peer identity to its participant index and never does.
+	// participants holds live connections; assignedIndexes binds peer identities to indices for the whole session.
 	participants     map[peer.ID]*participantConn
 	assignedIndexes  map[peer.ID]int
 	participantsList []peer.ID
@@ -65,12 +63,7 @@ type participantConn struct {
 	index  int
 }
 
-// incomingMessage carries a message together with the connection it was
-// authenticated on. The binding travels WITH the message rather than being
-// looked up again at fan-out time: the reader goroutine removes its
-// participant from the live map as soon as the stream ends, so a sender that
-// disconnects right after its last message — or simply loses its connection —
-// would otherwise have that already-authenticated message dropped.
+// incomingMessage carries a message with the connection it was authenticated on, so it survives the sender disconnecting.
 type incomingMessage struct {
 	conn     *participantConn
 	envelope *transport.Envelope
@@ -176,10 +169,7 @@ func (pc *P2PCoordinator) Stop(ctx context.Context) error {
 	var stopErr error
 
 	pc.stopOnce.Do(func() {
-		// NewP2PCoordinator binds the listen address, so a coordinator that
-		// was constructed but never started still holds the socket. Release
-		// it here rather than leaking it for the lifetime of the process; the
-		// not-started error is still reported to the caller.
+		// Release the socket bound at construction; the not-started error is still returned.
 		if !pc.started.Load() {
 			stopErr = fmt.Errorf("coordinator not started")
 			if err := pc.host.Close(); err != nil {
@@ -331,21 +321,7 @@ func (pc *P2PCoordinator) sendSessionInfo(conn *participantConn) error {
 	return WriteMessage(conn.stream, data)
 }
 
-// assignIndexLocked returns the participant index bound to a peer identity for
-// the whole session, assigning a fresh one the first time that identity is
-// seen. Callers hold participantsMu.
-//
-// The index MUST NOT be derived from how many peers happen to be connected. It
-// used to be len(pc.participants), and disconnects punch holes in that count:
-// with 0, 1 and 2 joined, participant 1 leaving and a new peer arriving hands
-// the newcomer index 2 while the original participant 2 still holds it. Both
-// then pass authorizeSender for index 2, which is the impersonation the
-// binding exists to prevent, and the fan-out skips both of them.
-//
-// So the binding is permanent for the session: a peer that reconnects gets its
-// own index back, an index a peer has left is never handed to another, and a
-// peer arriving after all NumParticipants indices are spoken for is refused
-// rather than seated on top of someone.
+// assignIndexLocked returns the session-long index bound to a peer, never reusing one; callers hold participantsMu.
 func (pc *P2PCoordinator) assignIndexLocked(peerID peer.ID) (int, error) {
 	if index, ok := pc.assignedIndexes[peerID]; ok {
 		return index, nil
@@ -358,17 +334,7 @@ func (pc *P2PCoordinator) assignIndexLocked(peerID peer.ID) (int, error) {
 	return index, nil
 }
 
-// authorizeSender binds a message's declared sender index to the authenticated
-// peer it arrived from.
-//
-// libp2p authenticates every connection: conn.peerID is the remote peer's
-// cryptographic identity, and handleStream assigns conn.index to that identity
-// when it joins. Nothing else establishes who sent a message. A coordinator
-// that relays envelope.SenderIdx unchecked therefore lets participant 2 send
-// a Round 1 commitment, a Round 2 share, or a CertEq signature that every
-// other participant attributes to participant 0 — and, because the
-// skip-the-sender branch also keys off the claimed index, delivers the forgery
-// to the participant being impersonated while sparing the forger.
+// authorizeSender checks a message's declared sender index against the authenticated peer's index.
 func authorizeSender(conn *participantConn, envelope *transport.Envelope) error {
 	if envelope.SenderIdx != conn.index {
 		return transport.NewSenderIdentityError(conn.peerID.String(), conn.index, envelope.SenderIdx)
@@ -461,15 +427,7 @@ func (pc *P2PCoordinator) processMessages(ctx context.Context) {
 	}
 }
 
-// broadcastMessage broadcasts a message to all participants except the sender.
-//
-// The relay is where a forged sender index would do its damage, so the binding
-// is enforced here as well as at ingress. It is checked against the connection
-// the message was authenticated on, which the message carries, rather than
-// against a fresh lookup in the live participant map: the map is the right
-// answer for "who should receive this" and the wrong one for "who sent this",
-// because a sender may already have disconnected by the time its last message
-// is fanned out.
+// broadcastMessage relays to every participant except the sender, checking the sender against the connection the message arrived on.
 func (pc *P2PCoordinator) broadcastMessage(msg *incomingMessage) error {
 	if msg == nil || msg.conn == nil {
 		return transport.NewSenderIdentityError("", -1, -1)

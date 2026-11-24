@@ -14,15 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package integration provides comprehensive end-to-end integration tests
-// for the go-frost-dkg implementation. These tests validate:
-//
-// 1. FROST-DKG protocol with all supported ciphersuites
-// 2. Full protocol simulations with multiple participants
-// 3. Validation against test vectors
-//
-// Integration tests run in Docker containers and perform complete E2E testing
-// with real services, never modifying the host OS.
+// Package integration runs end-to-end FROST-DKG tests in Docker across ciphersuites and test vectors.
 package integration
 
 import (

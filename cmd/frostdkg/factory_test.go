@@ -111,16 +111,7 @@ func (m *MockTransportFactory) NewCoordinator(protocol transport.Protocol, cfg *
 	return args.Get(0).(transport.Coordinator), args.Error(1)
 }
 
-// freeLoopbackPort returns a TCP port on the loopback interface that is free
-// at the moment it returns, by binding one and handing it straight back.
-//
-// This replaces a fixed tcp/9000 and the wait-and-skip machinery that went
-// with it. The factory used to rewrite every libp2p listen address to
-// /ip4/0.0.0.0/tcp/9000 regardless of configuration, so every coordinator in
-// this binary — and, because the Gitea runner gives job containers the HOST
-// network namespace, every concurrent job on that host — contended for one
-// port. Now that the configured address is honoured, each test can take a port
-// nobody else is on.
+// freeLoopbackPort returns a loopback TCP port that is free when it returns.
 func freeLoopbackPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -208,9 +199,7 @@ func TestDefaultTransportFactory(t *testing.T) {
 				assert.Error(t, err)
 				assert.Nil(t, coordinator)
 			} else {
-				// Gate cleanup on the assertions, not on `coordinator != nil`:
-				// the constructors return a typed nil on error, which is not
-				// equal to nil through the interface and would panic below.
+				// Gate cleanup on the assertions: the constructors return a typed nil on error.
 				if assert.NoError(t, err) && assert.NotNil(t, coordinator) {
 					t.Cleanup(func() {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -223,13 +212,7 @@ func TestDefaultTransportFactory(t *testing.T) {
 	}
 }
 
-// TestDefaultTransportFactory_LibP2PHonoursTheConfiguredAddress is the
-// regression test for the behaviour this factory used to get wrong in both
-// directions: it rewrote any configured libp2p listen address to
-// /ip4/0.0.0.0/tcp/9000 unless the address was exactly "0.0.0.0:9000", in
-// which case it fell through to DefaultHostConfig() and listened on an
-// ephemeral port instead. A test pinned to port 9000 passes either way, which
-// is why this one asks for a port the old code could not have produced.
+// TestDefaultTransportFactory_LibP2PHonoursTheConfiguredAddress checks the configured libp2p listen address is used as given.
 func TestDefaultTransportFactory_LibP2PHonoursTheConfiguredAddress(t *testing.T) {
 	factory := &DefaultTransportFactory{}
 	port := freeLoopbackPort(t)
@@ -263,8 +246,7 @@ func TestDefaultTransportFactory_LibP2PDefaultsToPort9000(t *testing.T) {
 	require.Equal(t, "/ip4/0.0.0.0/tcp/9000", listenAddr)
 }
 
-// TestDefaultTransportFactory_RejectsAnUnusableAddress proves the factory
-// fails at construction rather than at listen time.
+// TestDefaultTransportFactory_RejectsAnUnusableAddress checks the factory fails at construction, not at listen time.
 func TestDefaultTransportFactory_RejectsAnUnusableAddress(t *testing.T) {
 	factory := &DefaultTransportFactory{}
 	cfg := &transport.Config{Protocol: transport.ProtocolLibp2p, Address: "127.0.0.1:not-a-port"}

@@ -61,11 +61,7 @@ func guardTestServer(t *testing.T) (*MCPServer, context.Context) {
 	return server, ctx
 }
 
-// participant_idx arrives from the wire and is used to key the round maps,
-// which are then walked to fill aggregation slices sized at NumParticipants.
-// An index that was never registered used to be accepted, and the aggregation
-// pass panicked with an index-out-of-range that killed the stdio process and
-// corrupted the session under HTTP. Submissions must be refused before that.
+// Submissions with an unregistered participant_idx must be refused before aggregation.
 func TestMCPServer_SubmitRound1_RejectsUnjoinedParticipantIndex(t *testing.T) {
 	for _, idx := range []int{-1, 2, 7, 1 << 20} {
 		server, ctx := guardTestServer(t)
@@ -116,8 +112,7 @@ func TestMCPServer_SubmitCertEq_RejectsUnjoinedParticipantIndex(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A registered index must still be accepted — the guard must not reject the
-// legitimate path it was added to protect.
+// A registered index is still accepted.
 func TestMCPServer_SubmitRound1_AcceptsJoinedParticipantIndex(t *testing.T) {
 	server, ctx := guardTestServer(t)
 
@@ -135,9 +130,7 @@ func TestMCPServer_SubmitRound1_AcceptsJoinedParticipantIndex(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// Stop is reachable from more than one goroutine and previously closed
-// stopChan after a plain Load check, so a concurrent pair panicked with
-// "close of closed channel". Exactly one caller may succeed.
+// Concurrent Stop calls: exactly one succeeds and none panics.
 func TestMCPServer_Stop_ConcurrentCallsDoNotPanic(t *testing.T) {
 	server, ctx := guardTestServer(t)
 

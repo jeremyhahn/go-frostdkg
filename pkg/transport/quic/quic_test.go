@@ -515,12 +515,7 @@ func TestQUICRunDKG(t *testing.T) {
 			params := createTestDKGParams(t, idx, numParticipants, threshold)
 			result, err := client.RunDKG(ctx, params)
 
-			// QUIC carries the DKG messages but does not run the ceremony, so
-			// RunDKG fails closed (software task #61). Reaching this line at
-			// all proves the connect, join and session-info legs worked; what
-			// must NOT come back is key material. This test previously
-			// asserted only the LENGTHS of SecretShare/ThresholdPubkey, which
-			// the fabricated byte(0x42+idx) fill satisfied.
+			// Connect, join and session info worked; RunDKG must fail closed rather than return key material.
 			if !errors.Is(err, transport.ErrDKGNotImplemented) {
 				errChan <- fmt.Errorf("participant %d: expected ErrDKGNotImplemented, got err=%v result=%+v", idx, err, result)
 				return

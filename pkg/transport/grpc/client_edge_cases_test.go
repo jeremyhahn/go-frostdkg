@@ -357,10 +357,7 @@ func TestGRPCClient_ReceiveMessages_EdgeCases(t *testing.T) {
 		client, err := NewGRPCClient(cfg)
 		assert.NoError(t, err)
 
-		// Fill errorChan to capacity so the goroutine's error send BLOCKS.
-		// Without this the send succeeds immediately and the shutdown branch
-		// this subtest is named for is never reached -- errorChan is buffered
-		// (capacity 10), so the previous version tested nothing of the sort.
+		// Fill the buffered errorChan so the goroutine's send blocks and the shutdown branch is reached.
 		for len(client.errorChan) < cap(client.errorChan) {
 			client.errorChan <- errors.New("filler")
 		}
@@ -399,13 +396,7 @@ func TestGRPCClient_ReceiveMessages_EdgeCases(t *testing.T) {
 			Type:      proto.MessageType_MSG_TYPE_SESSION_INFO,
 		}
 		mockStream.On("Recv").Return(testMsg, nil).Once()
-		// Maybe, not Once. This expectation exists so a second Recv does not
-		// panic as unexpected -- it is permitted, not required. Whether it
-		// happens is a race the test cannot win either way: once the message
-		// has been read, the goroutine either loops round to Recv or sees the
-		// closed shutdownChan first, and BOTH are correct. Declaring it Once
-		// made AssertExpectations demand the losing side of that race, which
-		// failed roughly a third of the time under load (CI run 5254).
+		// Maybe, not Once: after the read the goroutine may Recv again or see shutdown first; both are correct.
 		mockStream.On("Recv").Return(nil, io.EOF).Maybe()
 		client.stream = mockStream
 		client.shutdownChan = make(chan struct{})

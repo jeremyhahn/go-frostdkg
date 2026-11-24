@@ -288,18 +288,7 @@ func TestProtocolParity_ErrorCases(t *testing.T) {
 	}
 }
 
-// runDKGTest is a helper that runs a complete DKG test for any transport.
-//
-// runsCeremony distinguishes the in-memory transport, which really does
-// produce a DKG result, from the network transports, which carry the protocol
-// messages but do not drive the ceremony and fail closed with
-// transport.ErrDKGNotImplemented (software task #61).
-//
-// Note what this table used to assert: every transport returned the SAME
-// fabricated SecretShare pattern, so CompareResultsAction found them
-// "equivalent" and the parity test passed without any transport having run a
-// DKG. The setup, connect, join and relay legs below are real and still run
-// for every transport; only the ceremony assertion differs.
+// runDKGTest runs a DKG over any transport; only the memory transport (runsCeremony) returns a result.
 func runDKGTest(
 	t *testing.T,
 	threshold int,

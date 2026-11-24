@@ -16,21 +16,15 @@
 
 // Package transport provides transport layer abstractions for FROST DKG protocol.
 //
-// # EXPERIMENTAL: the network transports do not run the DKG
+// # Experimental: the network transports do not run the DKG
 //
 // Every network transport in this tree — quic, grpc, grpc/unix, http, libp2p
 // and mcp — implements connection setup, session join and message relay, but
-// does NOT drive the DKG ceremony. Their Participant.RunDKG returns
+// does not drive the DKG ceremony. Their Participant.RunDKG returns
 // ErrDKGNotImplemented and no key material.
 //
-// Until v0.3.0-alpha they instead returned a DKGResult whose SecretShare was a
-// fixed pattern derived from the participant index, with a nil error — a value
-// no caller could distinguish from a real ceremony, and one anybody could
-// reconstruct. Failing closed replaces that.
-//
 // The FROST DKG itself, in pkg/dkg, is complete and is what the library API
-// exercises; only the transport wiring is absent. Wiring it up is tracked as
-// software task #61.
+// exercises; only the transport wiring is absent.
 //
 // The in-memory transport (pkg/transport/memory) is deliberately exempt: it is
 // a test double, and its deterministic result is the point.

@@ -333,9 +333,7 @@ func TestNewHostFromTransportConfig(t *testing.T) {
 		}
 	})
 
-	// transport.Config.Address is a "host:port" everywhere else in the
-	// transport layer. It used to be handed to libp2p verbatim, where it is
-	// not a multiaddr at all and the host fails to start.
+	// transport.Config.Address is host:port and must be converted to a multiaddr.
 	t.Run("host:port config binds what was configured", func(t *testing.T) {
 		port := freeLoopbackPort(t)
 		cfg := &transport.Config{Address: fmt.Sprintf("127.0.0.1:%d", port)}
@@ -1209,11 +1207,7 @@ func TestParticipantRunDKG(t *testing.T) {
 			Random:         transport.SealSecret(make([]byte, 32)),
 		}
 
-		// The coordinator start, participant connect and join above are real
-		// and must all have succeeded to reach this line. libp2p does not run
-		// the ceremony, so RunDKG fails closed (software task #61). The old
-		// assertions checked only the SIZES of SecretShare/ThresholdPubkey,
-		// which the fabricated byte(0x42+idx) fill satisfied.
+		// Start, connect and join succeeded; RunDKG must fail closed.
 		result, err := participant.RunDKG(ctx, params)
 		if !errors.Is(err, transport.ErrDKGNotImplemented) {
 			t.Fatalf("expected ErrDKGNotImplemented, got err=%v result=%+v", err, result)
@@ -1953,9 +1947,7 @@ func TestCoordinatorDuplicateParticipant(t *testing.T) {
 		t.Fatalf("failed to connect participant: %v", err)
 	}
 
-	// The participant is already connected, so we can't really test duplicate
-	// connections from the same participant easily. But we've covered the code path
-	// in the coordinator's handleStream method.
+	// Duplicate connections are covered through handleStream.
 	t.Log("Duplicate participant test completed")
 }
 
@@ -2382,10 +2374,7 @@ func TestFullDKGMessageFlow(t *testing.T) {
 		}(i)
 	}
 
-	// Every participant must report ErrDKGNotImplemented. The old version of
-	// this test collected results and asserted only the SIZES of
-	// SecretShare/ThresholdPubkey, which the fabricated byte(0x42+idx) fill
-	// satisfied for every transport.
+	// Every participant must report ErrDKGNotImplemented.
 	for i := 0; i < numParticipants; i++ {
 		select {
 		case err := <-errCh:

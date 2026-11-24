@@ -299,20 +299,7 @@ tidy:
 security: gosec vulncheck mod-verify trivy
 	@echo "Security suite passed"
 
-# gosec exclusions. §8 requires a written justification beside every rule; keep
-# this list identical to the one in .github/workflows/ci.yml.
-#   G115 integer overflow on conversion: every site gosec flags is a deliberate
-#        narrowing to byte — the big-endian serialization idiom
-#        (byte(v >> 24), byte(v >> 16), …) in pkg/dkg/refresh.go and
-#        pkg/dkg/frostdkg.go, and byte(participantIdx) where the index is a
-#        small participant ordinal bounded by the DKG group size.
-#        NOT a blanket "we accept overflow" — a NEW narrowing conversion
-#        without a preceding bound is a real finding this exclusion will hide,
-#        so review narrowing conversions by hand.
-#   G118 goroutine with context.Background/TODO: the single site is
-#        pkg/transport/quic/server.go's accept loop, which outlives the Start
-#        call that spawns it and is terminated by Stop through shutdownChan.
-#        Binding it to the caller's start-up context would cancel the listener.
+# gosec exclusions, identical to ci.yml: G115 deliberate byte narrowing in serialization (review new narrowing by hand); G118 the QUIC accept loop outlives Start and stops via shutdownChan.
 GOSEC_EXCLUDE := G115,G118
 
 .PHONY: gosec
@@ -320,15 +307,7 @@ gosec:
 	@echo "Running security scan with gosec..."
 	@gosec -exclude=$(GOSEC_EXCLUDE) -exclude-generated -severity medium -confidence medium -exclude-dir=test -exclude-dir=vendor ./...
 
-# govulncheck is blocking (§8) and is also the §9 forcing function for toolchain
-# currency. Two findings have NO fixed version published upstream and are
-# allowlisted here by ID; every other finding — including a new one in these
-# same modules — fails the target. Re-check on each dependency bump and delete
-# an entry the day its fix ships.
-#   GO-2024-3218 (allowlisted 2026-08-14) github.com/libp2p/go-libp2p-kad-dht:
-#       no fixed version upstream. See docs/security.md.
-#   GO-2026-4479 (allowlisted 2026-08-14) github.com/pion/dtls/v2, reached
-#       indirectly through libp2p's WebRTC transport: no fixed version upstream.
+# govulncheck blocks; GO-2024-3218 (go-libp2p-kad-dht) and GO-2026-4479 (pion/dtls/v2) have no upstream fix (docs/security.md).
 GOVULN_ALLOW := GO-2024-3218 GO-2026-4479
 
 .PHONY: vulncheck
@@ -509,20 +488,12 @@ help:
 AGENT_GIT ?= agent-git.sh
 REPO_NAME ?= go-frostdkg
 RELEASE_REMOTE ?= origin
-# Builds never resolve through a workspace: modules come from Gitea tags
-# (dependency-resolution.md §2). Immunizes against stray go.work files.
+# Builds never resolve through a workspace.
 export GOWORK=off
 
-# ---- dependency-resolution.md targets (2026-08-13 cutover) ----
-# deps-latest runs before compiling in a consumer repo. It picks the highest
-# tag INCLUDING -alpha prereleases — bare 'go get @latest' ignores
-# prereleases and would downgrade to legacy v0.0.0.
+# deps-latest picks the highest tag including -alpha prereleases, which go get @latest ignores.
 
-# release-alpha is the handbook's template v2 (release-versioning.md):
-#   make release-alpha VERSION=vX.Y.Z-alpha
-# The recipe lives in mk/release-alpha.mk and mk/release-common.mk, copied
-# verbatim from handbook software/templates/make/. The build version above is
-# BUILD_VERSION so it cannot shadow the VERSION argument.
+# release-alpha: make release-alpha VERSION=vX.Y.Z-alpha (recipe in mk/release-alpha.mk, mk/release-common.mk).
 include mk/release-alpha.mk
 
 .PHONY: deps-latest

@@ -11,16 +11,7 @@ WORKDIR /app
 # Copy go.mod and go.sum first for better caching
 COPY go.mod go.sum ./
 
-# go.mod pins first-party modules published to the internal Gitea, not to
-# github.com, so `go mod download` needs GOPRIVATE plus git's insteadOf rewrite
-# carrying a read-only token (dependency-resolution.md §6). Without it this
-# build dies on `github.com/jeremyhahn/go-frost@v0.1.7-alpha: unknown revision`.
-#
-# The token arrives as a BuildKit secret, never a build arg or ENV: an arg is
-# recoverable with `docker history`, while a secret is mounted on tmpfs for this
-# RUN alone. It is sourced rather than exported so it never reaches a command
-# line either. The mount is optional, so the same Dockerfile builds on GitHub
-# against the public proxy.
+# Private first-party modules resolve through an optional BuildKit secret token (GOPRIVATE plus insteadOf), never a build arg.
 RUN --mount=type=secret,id=gomodauth \
     set -eu; \
     if [ -f /run/secrets/gomodauth ]; then . /run/secrets/gomodauth; fi; \

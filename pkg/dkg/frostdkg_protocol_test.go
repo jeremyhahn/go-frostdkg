@@ -754,10 +754,7 @@ func TestFROSTDKGCommitmentMismatchRejected(t *testing.T) {
 
 	coordMsg, _ := FROSTDKGCoordinatorRound1(cs, msgs, threshold, n)
 
-	// Modify one commitment in the coordinator message
-	// This will be detected as either commitment mismatch or invalid POP
-	// depending on which check runs first (commitment mismatch check is first,
-	// but if we're not participant 0, the POP check for modified commitment fails)
+	// Modify one commitment; it fails as a commitment mismatch or an invalid POP, whichever check runs first.
 	wrongScalar, _ := grp.RandomScalar()
 	coordMsg.AllCommitments[0].Coefficients[0] = grp.ScalarBaseMult(wrongScalar)
 

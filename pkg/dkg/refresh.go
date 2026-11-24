@@ -382,8 +382,7 @@ func RefreshDKGPart2(
 		return nil, nil, NewFaultyParticipantError(0, "incorrect number of packages")
 	}
 
-	// The identity commitment needs to be added to the VSS commitment for secret package
-	// (it was removed for transmission)
+	// Restore the identity commitment removed for transmission.
 	identityElement := grp.Identity()
 
 	// Prepare round 2 packages
@@ -400,13 +399,7 @@ func RefreshDKGPart2(
 			return nil, nil, NewFaultyParticipantError(int(senderID), "incorrect commitment length")
 		}
 
-		// The sender's constant-term commitment is not transmitted (it is
-		// stripped in RefreshDKGPart1 and reconstructed as the identity here),
-		// so nothing at this point can bind the sender's actual constant term.
-		// A sender that used a non-zero constant term is caught in
-		// RefreshDKGShares, where every received share is checked against this
-		// same reconstructed commitment by VerifySecshare and fails.
-		//
+		// The sender's constant term is reconstructed as the identity; a non-zero one fails VerifySecshare in RefreshDKGShares.
 		// Compute share for this participant: f_i(senderID)
 		share := evaluatePolynomialAtIdentifier(
 			grp,
@@ -682,10 +675,7 @@ func generateRandomSeed(length int) ([]byte, error) {
 // force read failures.
 var cryptoRandRead = cryptoRead
 
-// evaluatePolynomialAtIdentifier evaluates a polynomial at a given identifier.
-// Identifiers are converted to scalars for evaluation.
-// The returned scalar holds a secret polynomial evaluation; callers must zeroize it
-// when it is no longer needed.
+// evaluatePolynomialAtIdentifier evaluates a polynomial at an identifier; the caller must zeroize the secret result.
 func evaluatePolynomialAtIdentifier(
 	grp group.Group,
 	coefficients []group.Scalar,

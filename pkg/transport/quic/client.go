@@ -105,13 +105,7 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 	if c.connected.Load() {
 		return transport.ErrAlreadyConnected
 	}
-	// A disconnected client is spent, not reusable. shutdownChan is created
-	// once and closed by Disconnect, so a second Connect would hand its
-	// receive goroutine an already-closed channel and that goroutine would
-	// exit immediately, leaving a connection nothing reads from. Refusing is
-	// the honest form of a reconnect this type does not implement; it also
-	// keeps a Connect from installing a new connection while a Disconnect is
-	// still tearing the old one down. Reconnect support is #21.
+	// A disconnected client cannot reconnect: its shutdownChan is already closed.
 	if c.disconnected.Load() {
 		return transport.ErrSessionClosed
 	}
@@ -185,12 +179,9 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 
 // Disconnect closes the connection to the coordinator.
 //
-// The lock is released before waiting on the receive goroutine, and that
-// ordering is load-bearing: receiveMessages takes connMu.RLock on every
-// iteration (see readMessage), so holding the write lock across wg.Wait means
-// the waiter is holding the lock its goroutine needs in order to finish. That
-// deadlocked the client outright — CI run 4495 sat in it until the test
-// timeout killed the process.
+// The lock is released before waiting on the receive goroutine:
+// receiveMessages takes connMu.RLock on every iteration (see readMessage), so
+// holding the write lock across wg.Wait would deadlock.
 func (c *QUICClient) Disconnect() error {
 	c.connMu.Lock()
 	if !c.connected.Load() {
@@ -205,9 +196,7 @@ func (c *QUICClient) Disconnect() error {
 	c.connected.Store(false)
 	c.disconnected.Store(true)
 
-	// Take BOTH the stream and the connection now. After this unlock,
-	// Disconnect works only from these locals: re-reading c.conn after the
-	// wait would let it close a connection it never opened.
+	// Take the stream and connection now; after unlocking, Disconnect uses only these locals.
 	stream := c.stream
 	conn := c.conn
 	c.stream = nil
@@ -316,15 +305,7 @@ func (c *QUICClient) waitForSessionInfo(ctx context.Context) (*transport.Session
 	}
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (c *QUICClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }

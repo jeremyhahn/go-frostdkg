@@ -35,12 +35,7 @@ type connStream struct {
 func (p *connStream) Read(b []byte) (int, error)  { return p.conn.Read(b) }
 func (p *connStream) Write(b []byte) (int, error) { return p.conn.Write(b) }
 
-// tcpPair returns a connected pair over loopback TCP.
-//
-// The kernel socket buffer is what makes this test meaningful: it lets the
-// writer get ahead of the reader so several frames sit in the buffer at once.
-// net.Pipe is a synchronous, unbuffered handoff that delivers exactly one
-// Write per Read, which hides the defect these tests cover.
+// tcpPair returns a loopback TCP pair; the socket buffer lets several frames queue, unlike net.Pipe.
 func tcpPair(t *testing.T) (client, server net.Conn) {
 	t.Helper()
 
@@ -73,11 +68,7 @@ func tcpPair(t *testing.T) (client, server net.Conn) {
 	return client, server
 }
 
-// Callers read in a loop from one long-lived stream. ReadMessage previously
-// wrapped the stream in a per-call bufio.Reader, which pulled up to 4096 bytes
-// off the socket and discarded everything past the first message when the
-// reader went out of scope. Frames written back to back were lost and the
-// framing desynchronised.
+// Back-to-back frames on one stream must all be read in order.
 func TestReadMessage_ConsecutiveMessagesAreNotDropped(t *testing.T) {
 	client, server := tcpPair(t)
 
