@@ -116,7 +116,14 @@ var (
 	// ErrInvalidRandomness indicates invalid randomness (wrong length or not random).
 	ErrInvalidRandomness = errors.New("transport: invalid randomness (must be 32 bytes)")
 
-	// ErrSenderIdentityMismatch indicates a declared sender index differs from the one bound to the authenticated connection.
+	// ErrSenderIdentityMismatch indicates a message declared a sender index
+	// other than the one bound to the authenticated connection it arrived on.
+	//
+	// The declared index is what every other participant uses to attribute a
+	// commitment, a share, or a CertEq signature, so a coordinator that relays
+	// it unchecked lets any participant speak as any other. The index a
+	// coordinator assigns to an authenticated peer is the only authority on
+	// who sent what.
 	ErrSenderIdentityMismatch = errors.New("transport: sender index does not match the authenticated peer")
 )
 
@@ -173,7 +180,16 @@ var (
 	// ErrInvalidDKGResult indicates invalid DKG result received.
 	ErrInvalidDKGResult = errors.New("transport: invalid DKG result")
 
-	// ErrDKGNotImplemented is returned by the network transports' RunDKG, which relay DKG messages but do not run the ceremony; the memory transport is exempt.
+	// ErrDKGNotImplemented indicates the transport carries DKG protocol
+	// messages but does not yet run the ceremony, so it cannot produce key
+	// material.
+	//
+	// Every network transport (quic, grpc, unix, http, libp2p, mcp) returns
+	// this from RunDKG rather than a result a caller could mistake for a real
+	// ceremony.
+	//
+	// The in-memory transport is exempt: it is a test double, and its
+	// deterministic result is the point.
 	ErrDKGNotImplemented = errors.New("transport: DKG is not implemented for this transport")
 )
 
@@ -307,7 +323,10 @@ func NewParticipantError(participantID string, index int, err error) error {
 	}
 }
 
-// SenderIdentityError reports a declared sender index that differs from the authenticated peer's index.
+// SenderIdentityError reports a message whose declared sender index does not
+// match the index bound to the authenticated peer that sent it. It carries
+// both indices so an operator can tell an impersonation attempt from a
+// participant that has lost track of its own index.
 type SenderIdentityError struct {
 	// PeerID identifies the authenticated peer the message arrived from.
 	PeerID string

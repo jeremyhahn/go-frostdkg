@@ -33,12 +33,35 @@ const DefaultCoordinatorPort = 9000
 // address names no host.
 const defaultListenHost = "0.0.0.0"
 
-// ListenMultiaddr converts "", "host:port", "host" or a multiaddr to a libp2p listen multiaddr (default 0.0.0.0:DefaultCoordinatorPort); DNS names are resolved.
+// ListenMultiaddr converts a transport address into the multiaddr form libp2p
+// requires for a listen address.
+//
+// The rest of the transport layer speaks "host:port" (transport.Config.Address)
+// while libp2p speaks multiaddrs, and every conversion site needs the same
+// three defaults. Accepted forms:
+//
+//   - "" — the whole default, /ip4/0.0.0.0/tcp/9000
+//   - "host:port" — an IPv4 or IPv6 literal, or a DNS name
+//   - "host" — the host with DefaultCoordinatorPort
+//   - a multiaddr already ("/ip4/…") — validated and returned unchanged, so a
+//     configuration written in libp2p's own notation keeps working
+//
+// An empty host means 0.0.0.0; an empty or zero port means
+// DefaultCoordinatorPort. Port 0 is not honoured as "pick one" here: a
+// coordinator has to publish an address participants can dial, and the
+// ephemeral-port case is the participant's, not the coordinator's.
+//
+// A DNS name is RESOLVED here rather than rendered from its spelling, so this
+// function does name lookup for that one input shape — see listenProtocol. A
+// name that resolves to nothing is rejected as an invalid address, which is
+// where it would fail anyway, only later and less legibly.
 func ListenMultiaddr(address string) (string, error) {
 	return listenMultiaddr(address, DefaultCoordinatorPort)
 }
 
-// ParticipantListenMultiaddr is ListenMultiaddr with a missing or zero port left 0, so the OS picks one.
+// ParticipantListenMultiaddr is ListenMultiaddr for a participant: a missing
+// or zero port stays 0, so the OS picks an ephemeral port and a participant
+// never collides with a coordinator on the same host.
 func ParticipantListenMultiaddr(address string) (string, error) {
 	return listenMultiaddr(address, 0)
 }

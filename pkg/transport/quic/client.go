@@ -33,7 +33,16 @@ import (
 	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 )
 
-// QUICClient implements transport.Participant over one bidirectional QUIC stream.
+// QUICClient implements the transport.Participant interface using QUIC.
+//
+// The client establishes a QUIC connection to the coordinator and uses
+// a bidirectional stream for sending and receiving DKG protocol messages.
+//
+// Features:
+//   - 0-RTT connection establishment (after initial handshake)
+//   - Automatic connection migration on network changes
+//   - Built-in congestion control
+//   - Stream multiplexing (future: multiple concurrent DKG sessions)
 type QUICClient struct {
 	config     *transport.Config
 	serializer *transport.Serializer
@@ -168,7 +177,11 @@ func (c *QUICClient) Connect(ctx context.Context, addr string) error {
 	return nil
 }
 
-// Disconnect closes the connection, releasing connMu before waiting because receiveMessages takes its read lock.
+// Disconnect closes the connection to the coordinator.
+//
+// The lock is released before waiting on the receive goroutine:
+// receiveMessages takes connMu.RLock on every iteration (see readMessage), so
+// holding the write lock across wg.Wait would deadlock.
 func (c *QUICClient) Disconnect() error {
 	c.connMu.Lock()
 	if !c.connected.Load() {
@@ -205,7 +218,12 @@ func (c *QUICClient) Disconnect() error {
 	return nil
 }
 
-// RunDKG connects and joins, then returns transport.ErrDKGNotImplemented: this transport does not run the ceremony.
+// RunDKG executes the FROST DKG protocol.
+//
+// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
+// join and session-info exchange happen as written, then this returns
+// transport.ErrDKGNotImplemented rather than key material. See package
+// transport and software task #61.
 func (c *QUICClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	if !c.connected.Load() {
 		return nil, transport.ErrNotConnected

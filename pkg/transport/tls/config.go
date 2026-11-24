@@ -14,7 +14,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package tls builds TLS 1.3 server and client configurations, with mTLS and self-signed test certificates.
+// Package tls provides production-ready TLS 1.3 configuration utilities for secure communication.
+//
+// This package enforces TLS 1.3 as the minimum version and provides simple APIs for creating
+// both server and client configurations with support for mutual TLS (mTLS). It includes
+// utilities for certificate management and self-signed certificate generation for testing.
+//
+// Key features:
+//   - TLS 1.3 enforcement for maximum security
+//   - Mutual TLS (mTLS) support for bidirectional authentication
+//   - Secure cipher suite selection (AES-256-GCM, AES-128-GCM, ChaCha20-Poly1305)
+//   - Self-signed certificate generation using ECDSA P-256
+//   - Comprehensive error handling with typed errors
+//
+// Example server configuration:
+//
+//	config, err := tls.ServerConfig("server.crt", "server.key", "")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	server := &http.Server{
+//	    Addr:      ":8443",
+//	    TLSConfig: config,
+//	}
+//
+// Example client configuration with mTLS:
+//
+//	config, err := tls.ClientConfig("client.crt", "client.key", "ca.crt", "server.example.com")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	client := &http.Client{
+//	    Transport: &http.Transport{
+//	        TLSClientConfig: config,
+//	    },
+//	}
 package tls
 
 import (
@@ -36,7 +70,10 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
-// ServerConfig creates a TLS 1.3 server config; caFile enables mTLS client verification.
+// ServerConfig creates a TLS 1.3 server configuration
+// certFile: path to server certificate (PEM)
+// keyFile: path to server private key (PEM)
+// caFile: optional path to CA cert for mTLS client verification (empty string to skip)
 func ServerConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	cert, err := LoadCertificate(certFile, keyFile)
 	if err != nil {
@@ -64,7 +101,11 @@ func ServerConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	return config, nil
 }
 
-// ClientConfig creates a TLS 1.3 client config; empty certFile/keyFile skip mTLS, empty caFile uses system roots.
+// ClientConfig creates a TLS 1.3 client configuration
+// certFile: optional path to client certificate for mTLS (empty to skip)
+// keyFile: optional path to client private key for mTLS (empty to skip)
+// caFile: path to CA cert to verify server (empty to use system roots)
+// serverName: expected server name for verification (empty to skip)
 func ClientConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, error) {
 	config := &tls.Config{
 		MinVersion: tls.VersionTLS13,
@@ -95,7 +136,13 @@ func ClientConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, er
 	return config, nil
 }
 
-// InsecureClientConfig skips server verification; for tests only.
+// InsecureClientConfig creates a TLS config that skips server verification.
+//
+// WARNING: This function is ONLY for testing and development purposes.
+// It disables certificate verification which makes the connection vulnerable
+// to man-in-the-middle attacks. NEVER use in production.
+//
+// For production, use ClientConfigWithCA() with proper CA certificates.
 func InsecureClientConfig() *tls.Config {
 	return &tls.Config{
 		MinVersion:         tls.VersionTLS13,

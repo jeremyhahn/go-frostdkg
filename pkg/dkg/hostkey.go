@@ -34,12 +34,38 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
-// HostKey is a DKG host identity key (ECDH, Sign, PublicKey), software or hardware-backed.
+// HostKey represents a host identity key used for DKG operations.
+// This interface abstracts the cryptographic operations to support both
+// software keys and hardware-backed keys (TPM, HSM, etc.) where the
+// private key material is not directly accessible.
+//
+// Implementations must provide:
+//   - ECDH: Compute shared secrets for encrypting DKG shares
+//   - Sign: Create signatures for CertEq protocol
+//   - PublicKey: Return the serialized public key
 type HostKey interface {
-	// ECDH returns the raw shared secret with theirPubkey; hardware keys compute it inside the secure element.
+	// ECDH computes a Diffie-Hellman shared secret with the given public key.
+	// For hardware-backed keys, this operation is performed inside the secure
+	// element without exposing the private key.
+	//
+	// Parameters:
+	//   - theirPubkey: The serialized public key of the other party
+	//
+	// Returns:
+	//   - sharedSecret: The raw shared secret (x-coordinate or full point)
+	//   - err: Any error that occurred during the operation
 	ECDH(theirPubkey []byte) (sharedSecret []byte, err error)
 
-	// Sign signs message; hardware keys sign inside the secure element.
+	// Sign creates a signature on the given message.
+	// For hardware-backed keys, this operation is performed inside the secure
+	// element without exposing the private key.
+	//
+	// Parameters:
+	//   - message: The message to sign
+	//
+	// Returns:
+	//   - signature: The signature bytes
+	//   - err: Any error that occurred during the operation
 	Sign(message []byte) (signature []byte, err error)
 
 	// PublicKey returns the serialized public key.
@@ -366,7 +392,16 @@ func (k *SoftwareHostKey) PublicKey() []byte {
 	return k.publicKey
 }
 
-// SecretKey returns a heap copy of the secret key, nil once zeroized; the caller must ZeroBytes it after use.
+// SecretKey returns a copy of the secret key bytes.
+//
+// This is the one path by which the secret leaves protected memory, and it
+// exists because HostKeyGenerator.LoadHostKey documents software keys as
+// exportable — persisting and reloading a host key needs it. The copy it
+// returns is an ordinary heap slice on the caller's swappable heap: whoever
+// calls this owns the exposure and must ZeroBytes the result as soon as it has
+// been consumed. Hardware-backed keys do not expose this at all.
+//
+// Returns nil if the key has been zeroized.
 func (k *SoftwareHostKey) SecretKey() []byte {
 	if k.zeroized() {
 		return nil
@@ -559,7 +594,13 @@ func verifySchnorrSignature(cs ciphersuite.Ciphersuite, grp group.Group, publicK
 	return nil
 }
 
-// CiphersuiteByID returns the ciphersuite for a FROST identifier, or ErrUnknownCiphersuite.
+// CiphersuiteByID returns the ciphersuite named by a FROST ciphersuite
+// identifier, or ErrUnknownCiphersuite if the identifier names none.
+//
+// The identifiers are wire values that arrive from configuration, a command
+// line, or a peer's session-info message, so resolving one is a normal need
+// outside this package — and doing it locally is how a caller ends up with a
+// second copy of the strings and, eventually, a copy that has drifted.
 func CiphersuiteByID(id string) (ciphersuite.Ciphersuite, error) {
 	switch id {
 	case CiphersuiteP256:

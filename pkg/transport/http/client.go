@@ -166,7 +166,12 @@ func (c *HTTPClient) Disconnect() error {
 	return nil
 }
 
-// RunDKG connects and joins, then returns transport.ErrDKGNotImplemented: this transport does not run the ceremony.
+// RunDKG executes the FROST DKG protocol
+//
+// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
+// join and session-info exchange happen as written, then this returns
+// transport.ErrDKGNotImplemented rather than key material. See package
+// transport and software task #61.
 func (c *HTTPClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	c.mu.RLock()
 	if !c.connected {

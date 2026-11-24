@@ -468,7 +468,9 @@ func (pc *P2PCoordinator) HasTLS() bool {
 	return pc.host.HasTLS()
 }
 
-// TLSEnabled reports whether certificate-based TLS is configured; libp2p always encrypts.
+// TLSEnabled returns true if TLS is enabled for this coordinator.
+// Note: libp2p always uses encryption (Noise or TLS 1.3), this returns
+// true if additional certificate-based TLS is configured.
 func (pc *P2PCoordinator) TLSEnabled() bool {
 	return pc.host.HasTLS()
 }

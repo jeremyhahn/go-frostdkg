@@ -172,7 +172,8 @@ var (
 	// ErrHostKeySignFailed indicates that signing failed.
 	ErrHostKeySignFailed = errors.New("hostkey: signing failed")
 
-	// ErrHostKeyZeroized indicates the key's secret material was zeroized.
+	// ErrHostKeyZeroized indicates that the key's secret material has been
+	// zeroized, so it can no longer perform private-key operations.
 	ErrHostKeyZeroized = errors.New("hostkey: key has been zeroized")
 )
 
@@ -258,7 +259,8 @@ func NewFaultyCoordinatorError(reason string) *FaultyCoordinatorError {
 	}
 }
 
-// UnknownFaultyPartyError indicates a participant or the coordinator is faulty, but not which.
+// UnknownFaultyPartyError indicates that either a participant or coordinator is faulty,
+// but investigation is required to determine which.
 type UnknownFaultyPartyError struct {
 	InvestigationData *ParticipantInvestigationData
 	Reason            string

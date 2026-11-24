@@ -25,7 +25,15 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
-// VSS is verifiable secret sharing: the secret is f(0) of a degree t-1 polynomial and participant i gets f(i+1).
+// VSS represents a Verifiable Secret Sharing scheme using a polynomial.
+//
+// VSS allows a dealer to share a secret among n participants such that:
+// - Any t participants can reconstruct the secret
+// - Fewer than t participants learn nothing about the secret
+// - Each participant can verify their share is correct
+//
+// The secret is the constant term of a polynomial f(x) of degree t-1.
+// Each participant i receives f(i+1) as their secret share.
 type VSS struct {
 	f   *Polynomial
 	grp group.Group
@@ -55,7 +63,12 @@ func NewVSS(grp group.Group, f *Polynomial) (*VSS, error) {
 	}, nil
 }
 
-// Generate creates a VSS with coeffs[i] = H3("FROST-DKG/vss coeffs" || seed || i).
+// Generate creates a new VSS instance using a ciphersuite's hash-to-scalar.
+// This is compatible with all FROST ciphersuites (Ed25519, ristretto255, P-256, etc.)
+// as it uses the ciphersuite's H3 function which properly handles scalar encoding.
+//
+// The polynomial coefficients are derived from the seed using the ciphersuite's H3 function.
+// coeffs[i] = H3("FROST-DKG/vss coeffs" || seed || i) for i in 0..t-1
 func Generate(cs ciphersuite.Ciphersuite, seed []byte, t int) (*VSS, error) {
 	grp := cs.Group()
 	if t <= 0 {
@@ -96,7 +109,11 @@ func Generate(cs ciphersuite.Ciphersuite, seed []byte, t int) (*VSS, error) {
 	return NewVSS(grp, poly)
 }
 
-// SecshareFor returns f(i+1) for 0-based participant index i, never f(0).
+// SecshareFor returns the secret share for participant with index i.
+//
+// This computes f(i+1) where i is the participant index (0-based).
+// The participant index must be non-negative.
+// We use i+1 to ensure we never evaluate f(0), which is the secret.
 func (v *VSS) SecshareFor(i int) (group.Scalar, error) {
 	if i < 0 {
 		return nil, ErrInvalidParticipantIndex
@@ -127,7 +144,11 @@ func (v *VSS) Secshares(n int) ([]group.Scalar, error) {
 	return shares, nil
 }
 
-// Commit returns the commitment C_j = f_j * G for each coefficient.
+// Commit returns the VSS commitment to the polynomial.
+//
+// The commitment consists of group elements C_j = f_j * G for each coefficient f_j,
+// where G is the group generator. This allows participants to verify their shares
+// without revealing the polynomial coefficients.
 func (v *VSS) Commit() *VSSCommitment {
 	coeffs := v.f.Coefficients()
 
@@ -163,7 +184,12 @@ func (c *VSSCommitment) Threshold() int {
 	return len(c.Coefficients)
 }
 
-// Pubshare returns sum((i+1)^j * C_j), the public key of share f(i+1).
+// Pubshare computes the public share for participant i.
+//
+// The public share is computed as:
+// pubshare(i) = C_0 + (i+1)*C_1 + (i+1)^2*C_2 + ... + (i+1)^(t-1)*C_(t-1)
+//
+// This is the public key corresponding to the secret share f(i+1).
 func (c *VSSCommitment) Pubshare(grp group.Group, i int) (group.Element, error) {
 	if i < 0 {
 		return nil, ErrInvalidParticipantIndex
@@ -190,7 +216,13 @@ func (c *VSSCommitment) Pubshare(grp group.Group, i int) (group.Element, error) 
 	return result, nil
 }
 
-// VerifySecshare reports whether secshare * G == pubshare, in constant time.
+// VerifySecshare verifies that a secret share matches its public share.
+//
+// Verification checks that secshare * G == pubshare, where G is the generator.
+// The caller must provide the correct public share for participant i using Pubshare(i).
+//
+// Uses constant-time comparison to prevent timing side-channel attacks.
+// Returns true if the share is valid, false otherwise.
 func VerifySecshare(grp group.Group, secshare group.Scalar, pubshare group.Element) bool {
 	actual := grp.ScalarBaseMult(secshare)
 
@@ -207,7 +239,10 @@ func VerifySecshare(grp group.Group, secshare group.Scalar, pubshare group.Eleme
 	return subtle.ConstantTimeCompare(actualBytes, expectedBytes) == 1
 }
 
-// ToBytes serializes the commitment as t compressed elements.
+// ToBytes serializes the VSS commitment to bytes.
+//
+// The commitment is serialized as the concatenation of all group elements
+// in compressed form. The total length is t * element_length bytes.
 func (c *VSSCommitment) ToBytes(grp group.Group) ([]byte, error) {
 	totalLen := len(c.Coefficients) * grp.ElementLength()
 	result := make([]byte, 0, totalLen)
@@ -230,7 +265,18 @@ func (c *VSSCommitment) ToBytes(grp group.Group) ([]byte, error) {
 	return result, nil
 }
 
-// FromBytes parses t elements; identity elements are allowed, so callers check C_0 themselves if a zero secret matters.
+// FromBytes deserializes a VSS commitment from bytes.
+//
+// The input must have exactly t * element_length bytes, where element_length
+// is the serialized size of a group element.
+//
+// SECURITY NOTE: This function allows identity elements in commitments because:
+//   - Zero polynomial coefficients result in identity elements when committed
+//   - Valid polynomials can have zero higher-degree coefficients
+//   - DeserializeElement validates curve point encoding (subgroup checks, etc.)
+//
+// Callers concerned about zero secrets should separately validate that
+// the first coefficient (C_0 = commitment to secret) is not identity.
 func VSSCommitmentFromBytes(grp group.Group, b []byte, t int) (*VSSCommitment, error) {
 	elemLen := grp.ElementLength()
 	expectedLen := t * elemLen
@@ -289,7 +335,13 @@ func (c *VSSCommitment) CommitmentToNonconstTerms() []group.Element {
 	return result
 }
 
-// Add adds two commitments element-wise; ErrMismatchedThreshold if thresholds differ.
+// Add adds two VSS commitments element-wise.
+//
+// This operation combines two VSS instances:
+// (C + D)[i] = C[i] + D[i] for each coefficient commitment.
+//
+// Both commitments must have the same threshold.
+// Returns ErrMismatchedThreshold if thresholds differ.
 func (c *VSSCommitment) Add(other *VSSCommitment) (*VSSCommitment, error) {
 	if c.Threshold() != other.Threshold() {
 		return nil, ErrMismatchedThreshold

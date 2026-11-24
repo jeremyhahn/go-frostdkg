@@ -20,7 +20,10 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
-// ZeroBytes zeros b in a way the compiler cannot remove.
+// ZeroBytes securely zeros a byte slice.
+// This is aligned with Zcash FROST's Zeroize trait pattern.
+// The function delegates to secmem.ZeroBytes which uses crypto/subtle
+// to prevent compiler optimizations from removing the zeroing operation.
 func ZeroBytes(b []byte) {
 	secmem.ZeroBytes(b)
 }

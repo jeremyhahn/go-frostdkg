@@ -33,7 +33,17 @@ import (
 	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 )
 
-// QUICServer implements transport.Coordinator over QUIC, relaying DKG messages on bidirectional streams.
+// QUICServer implements the transport.Coordinator interface using QUIC.
+//
+// QUIC provides:
+//   - UDP-based transport with built-in TLS 1.3
+//   - Multiplexed streams over a single connection
+//   - 0-RTT connection establishment (after initial handshake)
+//   - Improved congestion control and loss recovery
+//   - Connection migration support
+//
+// The server accepts multiple QUIC connections from participants and relays
+// DKG protocol messages using bidirectional streams.
 type QUICServer struct {
 	config        *transport.Config
 	sessionConfig *transport.SessionConfig

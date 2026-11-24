@@ -14,7 +14,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Share refresh (trusted dealer: ComputeRefreshingShares then RefreshShare; DKG: RefreshDKGPart1, RefreshDKGPart2, RefreshDKGShares); use the same approach as the original generation.
+// Package dkg implements share refresh functionality for FROST.
+//
+// Share refreshing has two purposes:
+// - Mitigate against share compromise
+// - Remove participants from a group
+//
+// This package supports refreshing shares using either a Trusted Dealer
+// or DKG approach. You should use the same approach as the original
+// share generation.
+//
+// For the Trusted Dealer approach, the trusted dealer calls
+// ComputeRefreshingShares and sends the returned refreshing shares to
+// the participants. Each participant then calls RefreshShare.
+//
+// For the DKG approach, the flow is similar to DKG itself. Each participant
+// calls RefreshDKGPart1, keeps the returned secret package and sends the
+// returned package to other participants. Then each participant calls
+// RefreshDKGPart2 and sends the returned packages to other participants.
+// Finally each participant calls RefreshDKGShares.
 
 package dkg
 
@@ -53,7 +71,27 @@ type PublicKeyPackage struct {
 	MinSigners *uint32
 }
 
-// ComputeRefreshingShares returns zero-secret refreshing shares, in identifier order, and the refreshed PublicKeyPackage; minSigners must match the original.
+// ComputeRefreshingShares computes refreshing shares for the Trusted Dealer approach.
+//
+// This function creates new shares that can be added to existing shares to refresh them.
+// The refreshing shares are based on a zero secret, so adding them doesn't change
+// the group public key.
+//
+// Parameters:
+//   - pubKeyPackage: The current public key package
+//   - maxSigners: Number of participants refreshing their shares (can be smaller than original)
+//   - minSigners: Threshold needed to sign (must equal original value)
+//   - identifiers: Identifiers of all participants refreshing (must have length maxSigners)
+//   - cs: The ciphersuite to use
+//
+// Returns:
+//   - A slice of RefreshingShare to send to participants (in same order as identifiers)
+//   - The refreshed PublicKeyPackage
+//
+// Errors:
+//   - Returns error if minSigners doesn't match the package's value
+//   - Returns error if number of identifiers doesn't match maxSigners
+//   - Returns error if parameters are invalid
 func ComputeRefreshingShares(
 	pubKeyPackage *PublicKeyPackage,
 	maxSigners uint32,
@@ -166,7 +204,22 @@ func ComputeRefreshingShares(
 	return refreshingShares, refreshedPubKeyPackage, nil
 }
 
-// RefreshShare applies a trusted dealer's refreshing share to currentKeyPackage.
+// RefreshShare refreshes a participant's share in the Trusted Dealer approach.
+//
+// This must be called by each participant with the refreshing share received
+// from the trusted dealer and their current key package.
+//
+// Parameters:
+//   - refreshingShare: The refreshing share received from the trusted dealer
+//   - currentKeyPackage: The participant's current key package
+//   - cs: The ciphersuite to use
+//
+// Returns:
+//   - The refreshed KeyPackage
+//
+// Errors:
+//   - Returns error if the refreshing share is invalid
+//   - Returns error if minSigners doesn't match
 func RefreshShare(
 	refreshingShare RefreshingShare,
 	currentKeyPackage *frost.KeyPackage,
@@ -215,7 +268,24 @@ func RefreshShare(
 	return newKeyPackage, nil
 }
 
-// RefreshDKGPart1 generates a zero-constant polynomial and returns the secret package to keep and the package to broadcast.
+// RefreshDKGPart1 executes part 1 of refresh share with DKG.
+//
+// Each participant generates a polynomial with zero constant term and
+// broadcasts commitments to other participants.
+//
+// Parameters:
+//   - identifier: The participant's unique identifier
+//   - maxSigners: Number of participants refreshing (can be smaller than original)
+//   - minSigners: Threshold needed to sign (must equal original value)
+//   - cs: The ciphersuite to use
+//
+// Returns:
+//   - Round1SecretPackage to keep in memory for part 2
+//   - Round1Package to broadcast to all other participants
+//
+// Errors:
+//   - Returns error if parameters are invalid
+//   - Returns error if random generation fails
 func RefreshDKGPart1(
 	identifier frost.Identifier,
 	maxSigners uint32,
@@ -283,7 +353,23 @@ func RefreshDKGPart1(
 	return secretPackage, publicPackage, nil
 }
 
-// RefreshDKGPart2 verifies the round 1 packages and returns the secret package to keep and the per-participant packages to send.
+// RefreshDKGPart2 performs the second part of the refresh procedure.
+//
+// Each participant verifies received packages and computes shares to send
+// to other participants.
+//
+// Parameters:
+//   - secretPackage: The secret package from RefreshDKGPart1
+//   - round1Packages: Map of Round1Package from other participants
+//   - cs: The ciphersuite to use
+//
+// Returns:
+//   - Round2SecretPackage to keep for part 3
+//   - Map of Round2Package to send to each other participant
+//
+// Errors:
+//   - Returns error if incorrect number of packages
+//   - Returns error if verification fails
 func RefreshDKGPart2(
 	secretPackage *dkg.Round1SecretPackage,
 	round1Packages map[frost.Identifier]*dkg.Round1Package,
@@ -349,7 +435,27 @@ func RefreshDKGPart2(
 	return round2SecretPackage, round2Packages, nil
 }
 
-// RefreshDKGShares verifies and adds the received shares to the old share, returning the refreshed KeyPackage and PublicKeyPackage.
+// RefreshDKGShares performs the third and final part of the refresh procedure.
+//
+// Each participant verifies received shares, accumulates them, and adds to
+// their existing share to create the refreshed share.
+//
+// Parameters:
+//   - round2SecretPackage: The secret package from RefreshDKGPart2
+//   - round1Packages: The same packages used in RefreshDKGPart2
+//   - round2Packages: Map of Round2Package from other participants
+//   - oldPubKeyPackage: The old public key package being refreshed
+//   - oldKeyPackage: The old key package being refreshed
+//   - cs: The ciphersuite to use
+//
+// Returns:
+//   - The refreshed KeyPackage with new signing share
+//   - The refreshed PublicKeyPackage with new verifying shares
+//
+// Errors:
+//   - Returns error if minSigners doesn't match
+//   - Returns error if share verification fails
+//   - Returns error if package counts are incorrect
 func RefreshDKGShares(
 	round2SecretPackage *dkg.Round2SecretPackage,
 	round1Packages map[frost.Identifier]*dkg.Round1Package,

@@ -16,8 +16,11 @@
 
 // Package libp2p provides a peer-to-peer transport implementation using libp2p.
 //
-// Experimental: this transport relays messages only; Participant.RunDKG
+// Experimental: this transport does not run the DKG ceremony. It implements
+// connection setup, session join and message relay only; Participant.RunDKG
 // returns transport.ErrDKGNotImplemented and no key material.
+//
+// See package transport for the full statement.
 //
 // # Overview
 //
@@ -248,5 +251,6 @@
 //   - Standard transport.Config configuration system
 //   - Existing DKG session management
 //
-// Without TLS configuration the transport uses libp2p's default security.
+// The TLS support is fully backward compatible - existing code without
+// TLS configuration will continue to work with libp2p's default security.
 package libp2p

@@ -26,7 +26,8 @@ import (
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport/quic"
 )
 
-// TransportFactory creates coordinators and participants; injectable for tests.
+// TransportFactory creates transport layer components (coordinators and participants).
+// This interface enables dependency injection for testing.
 type TransportFactory interface {
 	// NewParticipant creates a new participant for the given protocol.
 	NewParticipant(protocol transport.Protocol, cfg *transport.Config) (transport.Participant, error)

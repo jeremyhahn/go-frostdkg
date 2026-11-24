@@ -80,7 +80,15 @@ func WriteMessage(stream network.Stream, data []byte) error {
 	return nil
 }
 
-// ReadMessage reads a [4-byte length][data] frame straight off the stream; a per-call buffer would lose following frames.
+// ReadMessage reads a length-prefixed message from a stream.
+// Format: [4-byte length][message data]
+//
+// Reads come straight off the stream rather than through a bufio.Reader.
+// Callers invoke this in a loop on a long-lived stream, and a reader created
+// per call would buffer whatever followed the current message and then discard
+// it when it went out of scope, losing messages and desynchronising the
+// framing. Every read here is for an exact byte count, so buffering buys
+// nothing.
 func ReadMessage(stream network.Stream) ([]byte, error) {
 	// Read 4-byte length prefix
 	lengthBuf := make([]byte, 4)

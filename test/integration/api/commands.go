@@ -16,7 +16,13 @@
 
 //go:build integration
 
-// Package api provides transport-agnostic integration test actions for FROST DKG.
+// Package api provides protocol-agnostic integration test framework for FROST DKG.
+//
+// This package defines centralized test actions and utilities that work across
+// all transport implementations (gRPC, HTTP, QUIC, Unix sockets, memory).
+//
+// The TestAction interface enables composable test scenarios that verify
+// protocol parity across all transports.
 package api
 
 import (

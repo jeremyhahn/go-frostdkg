@@ -20,13 +20,25 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 )
 
-// Polynomial is f(x) = coeffs[0] + coeffs[1]*x + ... + coeffs[t-1]*x^(t-1) over any group.
+// Polynomial represents a scalar polynomial over a prime-order group.
+//
+// A polynomial f of degree at most t-1 is represented by a list of t coefficients:
+// f(x) = coeffs[0] + coeffs[1]*x + coeffs[2]*x^2 + ... + coeffs[t-1]*x^(t-1)
+//
+// The polynomial is curve-agnostic and works with any group.Group implementation.
 type Polynomial struct {
 	coeffs []group.Scalar
 	grp    group.Group
 }
 
-// Zeroize overwrites and drops the coefficients; best effort, as the GC may hold copies.
+// Zeroize clears the polynomial coefficients.
+//
+// Each coefficient's internal memory is overwritten with zeros via the
+// group.Scalar.Zeroize() method, then all references are set to nil to
+// make them GC-eligible.
+//
+// This is a best-effort operation for defense-in-depth; Go's GC may
+// retain copies from prior arithmetic operations.
 func (p *Polynomial) Zeroize() {
 	if p == nil {
 		return
@@ -44,7 +56,11 @@ func (p *Polynomial) Zeroize() {
 	p.coeffs = nil
 }
 
-// NewPolynomial creates a polynomial from constant-term-first coefficients; ErrInvalidPolynomial if empty.
+// NewPolynomial creates a new polynomial with the given coefficients.
+// The coefficients are ordered from the constant term (coeffs[0]) to the
+// highest degree term (coeffs[t-1]).
+//
+// Returns ErrInvalidPolynomial if coeffs is empty.
 func NewPolynomial(grp group.Group, coeffs []group.Scalar) (*Polynomial, error) {
 	if len(coeffs) == 0 {
 		return nil, ErrInvalidPolynomial
@@ -72,7 +88,16 @@ func (p *Polynomial) Threshold() int {
 	return len(p.coeffs)
 }
 
-// Eval evaluates the polynomial at x by Horner's method; x == 0 is refused because f(0) is the secret.
+// Eval evaluates the polynomial at position x using Horner's method.
+//
+// Horner's method is efficient and numerically stable:
+// f(x) = a0 + x(a1 + x(a2 + x(a3 + ... + x(an))))
+//
+// This method reverses the coefficient array and evaluates from the highest
+// degree term down to the constant term.
+//
+// SECURITY: This function returns an error if x is zero because evaluating at zero
+// reveals the secret (constant term). Use ConstantTerm() for explicit access.
 func (p *Polynomial) Eval(x group.Scalar) (group.Scalar, error) {
 	if len(p.coeffs) == 0 {
 		return p.grp.NewScalar(), nil // Return zero scalar
