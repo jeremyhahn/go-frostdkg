@@ -7,7 +7,9 @@ on:
 
 env:
   GO_VERSION: '1.27.3'
-  # Registry derived from github.server_url at run time, never hardcoded.
+  # No hardcoded registry: ghcr.io does not exist on the internal network, and
+  # Gitea's registry lives on the same host and port as its web UI. Both are
+  # derived from github.server_url at run time (devops.md §2).
   IMAGE_NAME: jeremyhahn/frostdkg
 
 permissions:
@@ -148,7 +150,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Registry derived from the server URL, never hardcoded.
+      # ghcr.io on GitHub, Gitea's own registry (same host and port as its web
+      # UI) on the internal network — derived, never hardcoded (devops.md §2).
       - name: Resolve registry
         id: registry
         run: |
@@ -158,7 +161,17 @@ jobs:
             echo "host=$(echo '${{ github.server_url }}' | sed -E 's#^https?://##')" >> "$GITHUB_OUTPUT"
           fi
 
-      # continue-on-error: a plain-HTTP registry login fails unless the daemon trusts it; the Trivy gate below stays blocking.
+      # continue-on-error for the same reason the push below has it, and it has
+      # to be here too or the guard never gets a chance to work: Gitea's
+      # registry is plain HTTP on :3001, and the docker daemon refuses it with
+      # "server gave HTTP response to HTTPS client" unless every daemon
+      # involved is configured as an insecure registry
+      # (infra/gitea/docs/lessons.md). Login runs BEFORE the build, so an
+      # unguarded failure here killed the whole job before the image was ever
+      # built or scanned — which is what happened to the v0.2.0-alpha release.
+      # Losing the image is annoying; losing the release over it would be
+      # worse. The Trivy gate below is unaffected and stays blocking: it scans
+      # a locally built image and needs no registry.
       - name: Log in to the registry
         continue-on-error: true
         uses: docker/login-action@v3
@@ -178,7 +191,13 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest
 
-      # Stage first-party module credentials under RUNNER_TEMP, outside the build context; read from the shell environment, not env.
+      # Same reasoning as ci.yml's docker job: go.mod pins first-party modules
+      # published to the internal Gitea, `go mod download` inside the image
+      # cannot reach them on its own, and a job environment does not cross into
+      # a docker build. Staged under RUNNER_TEMP, outside the build context,
+      # because Dockerfile.release ends with `COPY . .`. Read from the shell
+      # environment, NOT ${{ env.X }} — that reads this workflow's env: block
+      # and would silently write blanks.
       - name: Stage module-fetch credentials
         run: |
           set -eu
@@ -232,7 +251,9 @@ jobs:
           ENTRYPOINT ["/usr/local/bin/frostdkg"]
           DOCKERFILE
 
-      # Every image is gated on CRITICAL/HIGH before it reaches a registry: build amd64 locally, scan, then publish.
+      # devops.md §8: every container image is gated on CRITICAL/HIGH *before*
+      # it reaches a registry. Build the amd64 leg locally, scan it, then
+      # publish the multi-arch manifest from the same layer cache.
       - name: Build image for scanning
         uses: docker/build-push-action@v6
         with:
@@ -249,7 +270,8 @@ jobs:
             gomodauth=${{ steps.gomodauth.outputs.path }}
           cache-from: type=gha
 
-      # The trivy CLI, not trivy-action, so the scan works on every runner.
+      # The trivy CLI works identically on both hosts; trivy-action's setup
+      # cannot authenticate to github.com from a Gitea runner.
       - name: Install trivy CLI
         run: |
           TRIVY_VERSION=$(curl -fsSL https://api.github.com/repos/aquasecurity/trivy/releases/latest \
@@ -259,11 +281,18 @@ jobs:
             | tar -xz -C "$HOME/.local/bin" trivy
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # --ignore-unfixed on the OS layer: the gate fails only on findings a rebuild fixes.
+      # --ignore-unfixed on the OS layer, ratified 2026-08-14 (devops.md §8):
+      # base images carry hundreds of unfixable advisories at any given moment,
+      # so a raw gate would be permanently red and would train people to ignore
+      # it. This gate means "a rebuild fixes this" — actionable, so enforceable.
       - name: Trivy image gate (fail on fixable CRITICAL/HIGH)
         run: trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 go-frostdkg:scan
 
-      # The gate above blocks; only the publish tolerates a registry the daemon refuses.
+      # The gate above is blocking; only the publish tolerates failure. Docker
+      # refuses a plain-HTTP registry unless every daemon involved is told
+      # otherwise, so on a host that has not been configured the push fails.
+      # Losing the image is annoying; losing the release over it would be worse
+      # (infra/gitea/docs/lessons.md).
       - name: Build and push
         continue-on-error: true
         uses: docker/build-push-action@v6
@@ -299,7 +328,18 @@ jobs:
           TAG_NAME=${GITHUB_REF#refs/tags/}
           gh release download "${TAG_NAME}" --repo ${{ github.repository }} --pattern "*.sha256" --dir checksums || true
 
-      # Publish no checksums.txt when the aggregate cannot be built; the per-binary .sha256 files are authoritative.
+      # If the aggregate cannot be built, publish nothing rather than a
+      # placeholder. The previous version wrote the literal string "No
+      # checksums" into checksums.txt and uploaded it unconditionally — and on
+      # Gitea that is the NORMAL outcome, because the `gh` above talks to
+      # api.github.com and cannot see this release at all. v0.2.0-alpha shipped
+      # exactly that: a 13-byte checksums.txt. For a threshold-signature
+      # binary, an artifact that looks like a checksum manifest and is not one
+      # is worse than an absent one.
+      #
+      # Nothing is lost by skipping it: build-binaries already publishes a
+      # per-binary .sha256 next to every binary, and those are the
+      # authoritative checksums. checksums.txt is only a convenience aggregate.
       - name: Create master checksums
         id: checksums
         run: |
