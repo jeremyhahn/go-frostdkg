@@ -14,62 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package dkg implements the FROST-DKG distributed key generation protocol.
-//
-// This file implements the Repairable Threshold Scheme (RTS) from
-// https://eprint.iacr.org/2017/1155
-//
-// The RTS allows a participant to recover their lost share with help from a
-// threshold of other participants, without reconstructing the group secret.
-//
-// Protocol Overview:
-//
-//  1. Step 1 (Each Helper): Generate random delta values that sum to their
-//     Lagrange-weighted share contribution for the recovering participant.
-//
-//  2. Step 2 (Each Helper): Sum all received delta values from other helpers
-//     to compute a sigma value.
-//
-//  3. Step 3 (Recovering Participant): Sum all sigma values from helpers to
-//     recover their lost share.
-//
-// Security Requirements:
-//   - At least 2 helpers are required (the threshold)
-//   - Delta values between helpers must be transmitted on secure channels
-//   - Sigma values to the recovering participant must be on secure channels
-//   - All helper identifiers must be unique
+// Repairable Threshold Scheme (https://eprint.iacr.org/2017/1155): at least 2 helpers recover a lost share over secure channels without the group secret.
 package dkg
 
 import (
 	"github.com/jeremyhahn/go-frost/pkg/frost/group"
 )
 
-// RepairShareStep1 generates delta values for share repair.
-//
-// Each helper executes this function to generate delta values that will be
-// distributed to all other helpers (including themselves). The delta values
-// are constructed such that their sum equals the helper's Lagrange-weighted
-// contribution to the recovering participant's share.
-//
-// The function generates (numHelpers-1) random delta values, with the last
-// delta computed to ensure: sum(deltas) = L_i(x_participant) * share_i
-// where L_i is the Lagrange basis polynomial for this helper.
-//
-// Parameters:
-//   - helpers: Slice of all helper participant indices (including self)
-//   - myHelperIndex: This helper's index in the helpers slice
-//   - shareI: This helper's secret share
-//   - grp: The group being used (for scalar operations)
-//   - participantIndex: The index of the participant being recovered
-//
-// Returns:
-//   - A map from helper index to their delta value
-//   - An error if validation fails
-//
-// Errors:
-//   - ErrInvalidThreshold: Fewer than 2 helpers provided
-//   - ErrInvalidParticipantIndex: Helper indices contain invalid values
-//   - ErrDuplicateHelper: Duplicate helper indices detected
+// RepairShareStep1 returns per-helper random deltas summing to L_i(x_participant) * share_i.
 func RepairShareStep1(
 	helpers []int,
 	myHelperIndex int,
@@ -154,17 +106,7 @@ func RepairShareStep1(
 	return deltas, nil
 }
 
-// RepairShareStep2 computes sigma from received delta values.
-//
-// Each helper executes this function after receiving delta values from all
-// other helpers (including their own delta for themselves). The sigma value
-// is simply the sum of all received deltas.
-//
-// Parameters:
-//   - deltas: All delta values received from helpers (including self)
-//
-// Returns:
-//   - The sigma value (sum of all deltas)
+// RepairShareStep2 returns sigma, the sum of the received deltas.
 func RepairShareStep2(deltas []group.Scalar) group.Scalar {
 	if len(deltas) == 0 {
 		return nil
@@ -179,27 +121,7 @@ func RepairShareStep2(deltas []group.Scalar) group.Scalar {
 	return sigma
 }
 
-// RepairShareStep3 reconstructs the lost share from sigma values.
-//
-// The recovering participant executes this function after receiving sigma
-// values from all helpers. The recovered share is the sum of all sigmas.
-//
-// If a VSS commitment is provided, the function verifies that the recovered
-// share is valid by checking: share*G == Pubshare(participantIndex)
-//
-// Parameters:
-//   - sigmas: All sigma values received from helpers
-//   - participantIndex: This participant's index
-//   - commitment: VSS commitment for verification (optional, can be nil)
-//   - grp: The group being used
-//
-// Returns:
-//   - The recovered secret share
-//   - An error if verification fails or inputs are invalid
-//
-// Errors:
-//   - ErrInvalidShare: Share verification failed (if commitment provided)
-//   - ErrInvalidParticipantIndex: Invalid participant index
+// RepairShareStep3 sums the sigmas into the recovered share and, when commitment is non-nil, verifies share*G against it.
 func RepairShareStep3(
 	sigmas []group.Scalar,
 	participantIndex int,
@@ -235,34 +157,7 @@ func RepairShareStep3(
 	return recoveredShare, nil
 }
 
-// computeLagrangeCoefficientForHelper computes the Lagrange coefficient for a
-// specific helper at a given evaluation point.
-//
-// This computes L_i(x) for helper at index helperIdx, where:
-//
-//	L_i(x) = product((x - x_j) / (x_i - x_j)) for all j != i
-//
-// The Lagrange basis polynomial allows interpolation: given values f(x_0), f(x_1), ..., f(x_n),
-// we can compute f(x) = sum(f(x_i) * L_i(x)) for any x.
-//
-// In the RTS context, this is used to compute each helper's contribution to the
-// recovering participant's share:
-//
-//	share_participant = sum(L_i(x_participant) * share_i) for all helpers i
-//
-// Parameters:
-//   - xCoords: All helper x-coordinates (as scalars)
-//   - x: The evaluation point (recovering participant's x-coordinate)
-//   - helperIdx: The index of the helper in xCoords
-//   - grp: The group for scalar operations
-//
-// Returns:
-//   - The Lagrange coefficient L_i(x)
-//   - An error if computation fails
-//
-// Errors:
-//   - ErrInvalidParticipantIndex: Invalid helper index
-//   - ErrZeroScalar: Division by zero (duplicate x-coordinates)
+// computeLagrangeCoefficientForHelper returns L_i(x) = prod((x - x_j) / (x_i - x_j)) for j != i.
 func computeLagrangeCoefficientForHelper(
 	xCoords []group.Scalar,
 	x group.Scalar,

@@ -209,12 +209,7 @@ func (c *GRPCClient) Disconnect() error {
 	return nil
 }
 
-// RunDKG executes the FROST DKG protocol.
-//
-// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
-// join and session-info exchange happen as written, then this returns
-// transport.ErrDKGNotImplemented rather than key material. See package
-// transport and software task #61.
+// RunDKG connects and joins, then returns transport.ErrDKGNotImplemented: this transport does not run the ceremony.
 func (c *GRPCClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	if !c.connected.Load() {
 		return nil, transport.ErrNotConnected
@@ -302,15 +297,7 @@ func (c *GRPCClient) waitForSessionInfo(ctx context.Context) (*transport.Session
 	}
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (c *GRPCClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }

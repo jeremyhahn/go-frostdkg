@@ -64,10 +64,7 @@ type HostConfig struct {
 	// For advanced relay configuration, use RelayConfig instead.
 	EnableRelay bool
 
-	// RelayConfig contains advanced relay configuration for NAT traversal.
-	// If set, EnableRelay is ignored and settings from RelayConfig are used.
-	// Includes support for relay client, relay service, static relays,
-	// reservation management, and relay failover.
+	// RelayConfig configures relay client, service, static relays and failover; when set, EnableRelay is ignored.
 	RelayConfig *RelayConfig
 
 	// EnablePubSub enables GossipSub-based PubSub (default: false).

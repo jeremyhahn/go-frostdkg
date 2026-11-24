@@ -14,17 +14,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package quic provides the QUIC transport for FROST DKG.
-//
-// EXPERIMENTAL — this transport does NOT run the DKG ceremony. It implements
-// connection setup, session join and message relay only; Participant.RunDKG
-// returns transport.ErrDKGNotImplemented and no key material.
-//
-// Until v0.3.0-alpha RunDKG returned a DKGResult built from a fixed pattern
-// derived from the participant index, with a nil error — indistinguishable
-// from a real ceremony and reconstructable by anyone. Failing closed replaces
-// that. Wiring this transport to the real pkg/dkg driver is tracked as
-// software task #61.
-//
-// See package transport for the full statement.
+// Package quic provides the QUIC transport for FROST DKG; experimental: RunDKG returns transport.ErrDKGNotImplemented.
 package quic

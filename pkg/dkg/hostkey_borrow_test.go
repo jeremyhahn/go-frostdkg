@@ -23,11 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The HostKey a DKG state carries is BORROWED from the caller, never owned by
-// the state. Zeroize drops the reference and must not destroy the key: a host
-// key is a long-lived identity key that outlives any one session, and the same
-// key drives both steps of a single ceremony. These tests pin that contract;
-// restoring the sk.Zeroize() calls the states used to make fails every one.
+// A DKG state borrows its HostKey: Zeroize drops the reference and must not destroy the key.
 
 func TestFROSTDKGEncParticipantStateHK_Zeroize_LeavesBorrowedHostKeyUsable(t *testing.T) {
 	cs := testCiphersuite()

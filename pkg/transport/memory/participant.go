@@ -245,17 +245,7 @@ func (mp *MemoryParticipant) joinSession(ctx context.Context, params *transport.
 
 // executeDKG runs the DKG protocol rounds.
 func (mp *MemoryParticipant) executeDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
-	// This is a simplified stub implementation for testing the transport layer.
-	// In a real implementation, this would execute the full FROST DKG protocol.
-	//
-	// The actual DKG rounds would be:
-	// 1. Round 1: Generate and broadcast VSS commitments and PoP
-	// 2. Wait for aggregated Round 1 from coordinator
-	// 3. Round 2: Generate and send encrypted shares
-	// 4. Wait for aggregated Round 2 from coordinator
-	// 5. Generate CertEq signature
-	// 6. Wait for final certificate
-	// 7. Return DKG result
+	// Stub for transport tests: it does not run the FROST DKG rounds.
 
 	// For testing purposes, we'll create a mock result
 	// Real implementation would integrate with the FROST library

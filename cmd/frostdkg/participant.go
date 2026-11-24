@@ -124,12 +124,7 @@ type KeyShareOutput struct {
 	Timestamp        int64    `json:"timestamp"`
 }
 
-// generateSessionRandomness returns 32 bytes of CSPRNG output sealed in a
-// memguard enclave, zeroing the buffer it generated into on every path.
-//
-// Same ownership rule as loadHostSecretKey: transport.SealSecret copies rather
-// than consuming its input, so a caller that generated the buffer has to clear
-// it. The raw randomness exists only inside this function.
+// generateSessionRandomness returns 32 CSPRNG bytes sealed in an enclave, zeroing its buffer on every path.
 func generateSessionRandomness() (*secmem.SecretBytes, error) {
 	random := make([]byte, transport.SecretKeySize)
 	defer secmem.ZeroBytes(random)
@@ -145,19 +140,7 @@ func generateSessionRandomness() (*secmem.SecretBytes, error) {
 	return sealed, nil
 }
 
-// loadHostSecretKey returns the participant's host secret key sealed in a
-// memguard enclave, decoding the --hostkey flag when one was given and
-// generating a fresh key otherwise.
-//
-// The raw key exists only inside this function, and the intermediate slice is
-// zeroed on every path out. Sealing alone would not be enough:
-// transport.SealSecret deliberately COPIES rather than consuming its input —
-// the borrow rule, so that a caller holding several keys in one buffer does
-// not have the rest wiped underneath it — which means a caller that seals and
-// walks away leaves the plaintext on the ordinary heap for the life of the
-// process. Before the enclave migration the params struct aliased this slice
-// and DKGParams.Zeroize cleared it; now the params own a copy, so clearing the
-// source is this function's job.
+// loadHostSecretKey returns the host secret key sealed in an enclave, decoded from --hostkey or generated; SealSecret copies, so the source is zeroed here.
 func loadHostSecretKey(hostkeyHex string, verbose bool) (*secmem.SecretBytes, error) {
 	var hostSeckey []byte
 
@@ -223,18 +206,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Generate or load host secret key. The raw bytes never reach this scope:
-	// see loadHostSecretKey for why sealing alone would not be enough.
-	//
-	// The --hostkey flag's own string is deliberately NOT scrubbed. Writing
-	// through a string header is unsound in both directions (go-frost#15,
-	// measured by agent-go-frost): on a literal it SEGFAULTs, and on a heap
-	// string it silently mutates every alias — and a flag value IS aliased,
-	// pflag slices it out of os.Args. Scrubbing it would also buy nothing: a
-	// key passed on the command line is already in /proc/PID/cmdline, ps
-	// output and the shell history, so the Go copy is not the exposure. The
-	// scrub that does mean something is on the decoded []byte, which
-	// loadHostSecretKey owns and zeroes.
+	// The raw host key stays in loadHostSecretKey; the --hostkey string is not scrubbed, since writing through a string header is unsound.
 	hostSecret, err := loadHostSecretKey(participantHostkey, verbose)
 	if err != nil {
 		return err
@@ -243,26 +215,17 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 	// defer covers the paths that return before params exists.
 	defer hostSecret.Destroy()
 
-	// Generate the DKG session randomness. It is sealed the same way the host
-	// key is, and for the same reason: combined with the host key it derives
-	// the participant seed, so it is a secret and not a nonce. The defer runs
-	// before params exists, covering every error return between here and there.
+	// Session randomness is a secret (it derives the participant seed), so it is sealed like the host key.
 	sessionRandom, err := generateSessionRandomness()
 	if err != nil {
 		return err
 	}
 	defer sessionRandom.Destroy()
 
-	// For now, we'll use placeholder host public keys
-	// In a real scenario, these would be coordinated beforehand
-	// This is a simplified example - typically you'd load these from config
-	// or exchange them in a pre-session setup phase
+	// Placeholder host public keys; real deployments load or exchange them before the session.
 	var hostPubkeys [][]byte
 
-	// TODO: This is a placeholder. In production, host public keys should be
-	// provided via config file or pre-shared. For now, we'll create dummy keys.
-	// The actual implementation would derive the public key from the secret key
-	// and coordinate with other participants.
+	// TODO: load host public keys from config or a pre-shared set instead of dummy keys.
 	if participantHostpubkeys != "" {
 		return fmt.Errorf("--hostpubkeys parsing not yet implemented; host keys should be coordinated via config")
 	}
@@ -305,10 +268,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		KeepAliveInterval: 30 * time.Second,
 	}
 
-	// libp2p participants are hosts that listen as well as dial. The factory
-	// reads the bind address from cfg.Address, so for libp2p it carries the
-	// resolved listen address (flag > env > config file > ephemeral default);
-	// the coordinator is dialled by participant.Connect below.
+	// For libp2p cfg.Address carries the resolved listen address (flag > env > config > ephemeral); Connect dials the coordinator.
 	if cfg.Protocol == transport.ProtocolLibp2p {
 		cfg.Address = viper.GetString("participant.listen")
 	}
@@ -370,11 +330,7 @@ func runParticipant(cmd *cobra.Command, args []string) error {
 		publicSharesHex[i] = hex.EncodeToString(share)
 	}
 
-	// The share leaves the enclave only to be hex-encoded for the output file.
-	// Every scrub below is a defer installed the moment the value exists, so
-	// it covers the failure returns too -- an unwritable output directory used
-	// to leave the plaintext share in memory, which is the one moment it most
-	// obviously must not.
+	// The share leaves the enclave only for hex encoding; each scrub is deferred as soon as the value exists.
 	var secretShareHex string
 	if err := secmem.WithSecret(result.SecretShare, func(share []byte) error {
 		secretShareHex = hex.EncodeToString(share)

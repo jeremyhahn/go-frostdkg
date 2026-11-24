@@ -74,10 +74,7 @@ func TestAuthorizeSender_RejectsAClaimedIndex(t *testing.T) {
 	require.Equal(t, 0, identityErr.ClaimedIndex)
 }
 
-// TestAuthorizeSender_RejectsTheCoordinatorIndex covers the specific forgery
-// worth naming: -1 is the index the coordinator itself sends under, so a
-// participant claiming it would have its message relayed as coordinator
-// traffic and skipped for no one.
+// TestAuthorizeSender_RejectsTheCoordinatorIndex checks a participant cannot claim the coordinator's index -1.
 func TestAuthorizeSender_RejectsTheCoordinatorIndex(t *testing.T) {
 	conn := &participantConn{peerID: testPeerID(t, "peer-2"), index: 2}
 	envelope := &transport.Envelope{SenderIdx: -1, Type: transport.MsgTypeRound1Agg}
@@ -85,9 +82,7 @@ func TestAuthorizeSender_RejectsTheCoordinatorIndex(t *testing.T) {
 	require.ErrorIs(t, authorizeSender(conn, envelope), transport.ErrSenderIdentityMismatch)
 }
 
-// newTestCoordinator builds a coordinator with no libp2p host. Only the
-// participant tables, the serializer and the relay path are exercised here;
-// nothing in these tests touches the network.
+// newTestCoordinator builds a coordinator with no libp2p host, for relay-path tests.
 func newTestCoordinator(t *testing.T, numParticipants int) *P2PCoordinator {
 	t.Helper()
 	serializer, err := transport.NewSerializer("json")
@@ -202,10 +197,7 @@ func TestBroadcastMessage_RefusesAMessageWithNoBinding(t *testing.T) {
 	require.ErrorIs(t, pc.broadcastMessage(nil), transport.ErrSenderIdentityMismatch)
 }
 
-// TestAssignIndex_NeverReusesAnIndexAfterADisconnect is the collision the
-// index assignment must not have: deriving the index from the number of LIVE
-// participants hands a newcomer an index somebody else already holds as soon
-// as a middle participant leaves, and both then authorize as that index.
+// TestAssignIndex_NeverReusesAnIndexAfterADisconnect checks a newcomer never gets an index another peer holds.
 func TestAssignIndex_NeverReusesAnIndexAfterADisconnect(t *testing.T) {
 	pc := newTestCoordinator(t, 3)
 

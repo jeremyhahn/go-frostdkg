@@ -42,35 +42,7 @@ func safeUint32(n int) uint32 {
 	return uint32(n)
 }
 
-// CertEqMessage creates the message to be signed in the CertEq protocol.
-//
-// The message format uses FROST-DKG domain separation and includes session
-// context binding to prevent cross-session replay attacks per ChillDKG spec:
-//
-//	prefix = (FROST-DKG-TAG + "certeq") padded with zeros to 33 bytes
-//	session_context = threshold || n || hostpubkeys_concat
-//	message = prefix || participant_index || session_context || transcript
-//
-// where:
-//   - participant_index is a 4-byte big-endian unsigned integer
-//   - threshold is a 4-byte big-endian unsigned integer
-//   - n is a 4-byte big-endian unsigned integer (number of participants)
-//   - hostpubkeys_concat is the concatenation of all host public keys
-//
-// This ensures that:
-//  1. Each participant signs a unique message (via participant_index)
-//  2. Signatures cannot be replayed across sessions with different parameters
-//  3. Signatures are bound to the specific set of participants (via hostpubkeys)
-//
-// Parameters:
-//   - transcript: The session transcript to be signed (eq_input from FROST-DKG).
-//   - participantIndex: The zero-based index of the participant in the session.
-//   - hostPubkeys: Ordered list of all participants' host public keys.
-//   - threshold: The signing threshold (t in t-of-n).
-//
-// Returns:
-//
-//	The complete message to be signed by the participant.
+// CertEqMessage builds the CertEq message: prefix || participant_index || threshold || n || hostpubkeys || transcript, binding the session per ChillDKG.
 func CertEqMessage(transcript []byte, participantIndex int, hostPubkeys [][]byte, threshold int) []byte {
 	// Create the domain separation prefix:
 	// FROST-DKG-TAG + "certeq" padded with zeros to 33 bytes
@@ -111,32 +83,7 @@ func CertEqMessage(transcript []byte, participantIndex int, hostPubkeys [][]byte
 	return message
 }
 
-// CertEqParticipantStep performs a participant's step in the CertEq protocol.
-//
-// This function creates a signature on the session transcript using the provided
-// signer, which allows using different signature schemes for different ciphersuites.
-//
-// The signature includes session context binding (hostpubkeys, threshold, n) to
-// prevent cross-session replay attacks per the ChillDKG specification.
-//
-// Parameters:
-//   - signer: The signer to use for creating the signature.
-//   - hostSeckey: The participant's long-term host secret key.
-//   - participantIndex: The zero-based index of the participant in the session.
-//   - hostPubkeys: Ordered list of all participants' host public keys for session binding.
-//   - threshold: The signing threshold (t in t-of-n) for session binding.
-//   - transcript: The session transcript to sign (eq_input from FROST-DKG).
-//   - auxRand: Optional auxiliary randomness for signing. If nil, random data
-//     will be generated automatically.
-//
-// Returns:
-//
-//	A signature of the size specified by the signer.
-//
-// Errors:
-//   - ErrSignerRequired: If signer is nil.
-//   - ErrInvalidSecretKey: If the host secret key is invalid or wrong length.
-//   - Signature errors: If signature generation fails.
+// CertEqParticipantStep signs the transcript bound to hostPubkeys, threshold and n; auxRand nil means random.
 func CertEqParticipantStep(signer Signer, hostSeckey []byte, participantIndex int, hostPubkeys [][]byte, threshold int, transcript []byte, auxRand []byte) ([]byte, error) {
 	if signer == nil {
 		return nil, ErrSignerRequired
@@ -157,36 +104,7 @@ func CertEqParticipantStep(signer Signer, hostSeckey []byte, participantIndex in
 	return signature, nil
 }
 
-// CertEqVerify verifies a success certificate from the CertEq protocol.
-//
-// A certificate is a concatenation of signatures from all n participants.
-// This function verifies that each signature is valid for the corresponding
-// participant's public key and the session transcript.
-//
-// The verification includes session context binding (hostpubkeys, threshold, n)
-// to ensure signatures cannot be replayed across different DKG sessions.
-//
-// The verification ensures:
-//  1. The certificate has the correct length (n * signatureSize bytes).
-//  2. Each participant's signature is valid for their host public key.
-//  3. All participants signed the same transcript with the same session context.
-//
-// Parameters:
-//   - signer: The signer to use for verifying signatures.
-//   - hostPubkeys: Ordered list of all participants' host public keys.
-//   - threshold: The signing threshold (t in t-of-n) for session binding.
-//   - transcript: The session transcript that was signed (eq_input from FROST-DKG).
-//   - certificate: The certificate containing all n signatures.
-//
-// Returns:
-//
-//	nil if the certificate is valid, otherwise an error describing the failure.
-//
-// Errors:
-//   - ErrSignerRequired: If signer is nil.
-//   - ErrInvalidCertificateLength: If the certificate length is incorrect.
-//   - InvalidSignatureError: If a specific participant's signature is invalid.
-//   - ErrInvalidHostPubkey: If a host public key is invalid.
+// CertEqVerify checks a certificate of n signatures, each against its participant's host key and the session-bound transcript.
 func CertEqVerify(signer Signer, hostPubkeys [][]byte, threshold int, transcript []byte, certificate []byte) error {
 	if signer == nil {
 		return ErrSignerRequired
@@ -205,9 +123,7 @@ func CertEqVerify(signer Signer, hostPubkeys [][]byte, threshold int, transcript
 		}
 	}
 
-	// SECURITY: Verify ALL signatures before returning to prevent timing attacks.
-	// Early return would leak information about which signature is invalid.
-	// We collect errors and return the first one after all verifications complete.
+	// Verify every signature before returning so timing does not reveal which one failed.
 	var firstError error
 	firstErrorIndex := -1
 
@@ -245,26 +161,7 @@ func CertEqVerify(signer Signer, hostPubkeys [][]byte, threshold int, transcript
 	return nil
 }
 
-// CertEqCoordinatorStep assembles a certificate from participant signatures.
-//
-// The coordinator collects signatures from all participants and concatenates
-// them to form the certificate. This is a simple concatenation operation.
-//
-// The order of signatures in the certificate must match the order of participants
-// in the session, as the certificate will be verified against the ordered list
-// of host public keys.
-//
-// Parameters:
-//   - signatures: List of signatures from all participants, in order.
-//
-// Returns:
-//
-//	The assembled certificate (concatenation of all signatures).
-//
-// Note:
-//
-//	This function does not perform validation. The coordinator should verify
-//	signatures before including them in the certificate using CertEqVerify.
+// CertEqCoordinatorStep concatenates participant signatures in session order; it does not validate them (use CertEqVerify).
 func CertEqCoordinatorStep(signatures [][]byte) []byte {
 	// Calculate total size
 	totalSize := 0
@@ -281,16 +178,7 @@ func CertEqCoordinatorStep(signatures [][]byte) []byte {
 	return certificate
 }
 
-// CertEqCertificateLength returns the expected length of a certificate
-// for n participants using a specific signer.
-//
-// Parameters:
-//   - signer: The signer to use for determining signature size.
-//   - n: The number of participants in the session.
-//
-// Returns:
-//
-//	The expected certificate length in bytes.
+// CertEqCertificateLength returns the certificate length for n participants with signer.
 func CertEqCertificateLength(signer Signer, n int) int {
 	return n * signer.SignatureSize()
 }

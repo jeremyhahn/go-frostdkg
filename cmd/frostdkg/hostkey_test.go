@@ -26,16 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// loadHostSecretKey exists so the raw host key has exactly one scope. What
-// keeps the plaintext off the heap is structural rather than assertable: the
-// function returns ONLY a *secmem.SecretBytes, so a caller has nothing else to
-// hold, and the intermediate slice is a function-local zeroed by defer on
-// every path. A test cannot observe a zeroed function-local, and pretending
-// otherwise would be a test that proves nothing.
-//
-// What these tests do pin is the behaviour a regression would actually change:
-// the returned secret is sealed and correct, the flag string is cleared, and
-// the failure paths return no secret at all.
+// These tests check the sealed secret is correct and failure paths return no secret.
 
 func TestLoadHostSecretKey_SealsTheProvidedKey(t *testing.T) {
 	key := make([]byte, transport.SecretKeySize)
@@ -98,17 +89,7 @@ func TestLoadHostSecretKey_RejectsBadInputWithoutReturningASecret(t *testing.T) 
 	}
 }
 
-// TestRunParticipant_DoesNotWriteThroughTheHostkeyFlag pins a decision, not an
-// accident: the --hostkey flag string is left alone.
-//
-// An earlier version of this change scrubbed it with secmem.ZeroString, which
-// writes through the string header. That is unsound in both directions
-// (go-frost#15): on a string literal it SEGFAULTs — cli_test.go passes one —
-// and on a heap string it silently mutates every alias, which a flag value has,
-// since pflag slices it out of os.Args. Scrubbing would also protect nothing a
-// key on the command line is already in /proc/PID/cmdline and ps output.
-//
-// So the flag must come back unchanged. Re-introducing the scrub fails this.
+// TestRunParticipant_DoesNotWriteThroughTheHostkeyFlag checks the --hostkey string is left unchanged: writing through a string header is unsound.
 func TestRunParticipant_DoesNotWriteThroughTheHostkeyFlag(t *testing.T) {
 	original := participantHostkey
 	originalProtocol := protocol
@@ -122,9 +103,7 @@ func TestRunParticipant_DoesNotWriteThroughTheHostkeyFlag(t *testing.T) {
 		key[i] = byte(i + 1)
 	}
 	secretHex := hex.EncodeToString(key)
-	// An INDEPENDENT copy: sharing a backing array with participantHostkey
-	// would let an in-place scrub wipe the expected value too, and the
-	// comparison below would compare NULs to NULs and pass.
+	// An independent copy, so an in-place scrub cannot wipe the expected value.
 	expected := string(append([]byte(nil), secretHex...))
 	participantHostkey = secretHex
 

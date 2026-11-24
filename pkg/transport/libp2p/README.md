@@ -477,9 +477,7 @@ BenchmarkHostCreationNoTLS-96      12.0ms/op
 - **Message Size**: 10MB maximum message size
 - **Connection Limits**: Subject to libp2p host connection limits
 
-## Implemented Enhancements
-
-All previously planned enhancements have been implemented:
+## Features
 
 - [x] **Pubsub-based broadcast** (`pubsub.go`) - GossipSub-based session messaging with acknowledgments
 - [x] **DHT integration for peer discovery** (`discovery.go`) - Kademlia DHT with rendezvous-based discovery

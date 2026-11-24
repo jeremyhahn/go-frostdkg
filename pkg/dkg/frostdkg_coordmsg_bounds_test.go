@@ -23,9 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The coordinator is untrusted. A coordinator message carrying fewer public
-// nonces than there are participants must fail the round with a typed error,
-// not panic the participant with an index-out-of-range.
+// A coordinator message with fewer pubnonces than participants must fail with a typed error, not panic.
 func TestFROSTDKGEncParticipantRound2_ShortPubnoncesIsRejected(t *testing.T) {
 	cs := ristretto255_sha512.New()
 	grp := cs.Group()

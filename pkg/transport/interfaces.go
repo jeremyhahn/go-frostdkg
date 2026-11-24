@@ -14,45 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package transport provides transport layer abstractions for FROST DKG protocol.
-//
-// # EXPERIMENTAL: the network transports do not run the DKG
-//
-// Every network transport in this tree — quic, grpc, grpc/unix, http, libp2p
-// and mcp — implements connection setup, session join and message relay, but
-// does NOT drive the DKG ceremony. Their Participant.RunDKG returns
-// ErrDKGNotImplemented and no key material.
-//
-// Until v0.3.0-alpha they instead returned a DKGResult whose SecretShare was a
-// fixed pattern derived from the participant index, with a nil error — a value
-// no caller could distinguish from a real ceremony, and one anybody could
-// reconstruct. Failing closed replaces that.
-//
-// The FROST DKG itself, in pkg/dkg, is complete and is what the library API
-// exercises; only the transport wiring is absent. Wiring it up is tracked as
-// software task #61.
-//
-// The in-memory transport (pkg/transport/memory) is deliberately exempt: it is
-// a test double, and its deterministic result is the point.
-//
-// The transport layer enables distributed key generation by providing:
-//   - Multiple protocol support (gRPC, HTTP, QUIC, libp2p, MCP, Unix sockets)
-//   - Coordinator for message relay between participants
-//   - Participant interface for DKG session execution
-//   - Pluggable codec support (JSON, CBOR, MessagePack)
-//   - TLS/mTLS security
-//
-// The Coordinator is a relay server with no cryptographic role. It:
-//   - Accepts connections from participants
-//   - Relays messages between participants
-//   - Manages session lifecycle
-//   - Does not participate in DKG cryptography
-//
-// Participants connect to a Coordinator and execute the DKG protocol by:
-//   - Establishing secure connections
-//   - Sending/receiving protocol messages
-//   - Running the FROST DKG session
-//   - Receiving threshold keys and shares
+// Package transport relays FROST DKG messages over gRPC, HTTP, QUIC, libp2p, MCP and Unix sockets; network transports' RunDKG returns ErrDKGNotImplemented, the memory transport is a test double.
 package transport
 
 import (
@@ -130,19 +92,12 @@ const (
 	ProtocolMemory Protocol = "memory"
 )
 
-// Config holds transport layer configuration.
-//
-// The Config specifies how to establish connections and secure communications
-// for DKG sessions. Different protocols may use different config fields.
+// Config holds connection and security settings; fields used vary by protocol.
 type Config struct {
 	// Protocol specifies the transport protocol to use.
 	Protocol Protocol
 
-	// Address is the network address.
-	// Format depends on protocol:
-	//   - TCP protocols: "host:port" (e.g., "localhost:9000")
-	//   - Unix socket: "/path/to/socket" (e.g., "/tmp/frostdkg.sock")
-	//   - Memory: arbitrary identifier (e.g., "session-123")
+	// Address is host:port for TCP protocols, a socket path for Unix, any identifier for memory.
 	Address string
 
 	// TLSCertFile is the path to TLS certificate file (PEM format).
@@ -187,16 +142,7 @@ type Config struct {
 	Logger Logger
 }
 
-// Coordinator interface manages a DKG session by relaying messages between participants.
-//
-// The coordinator has no cryptographic role and does not participate in the DKG.
-// It acts purely as a message relay and session coordinator.
-//
-// Lifecycle:
-//  1. Start() - Begin accepting participant connections
-//  2. WaitForParticipants() - Wait for n participants to connect
-//  3. (Message relay happens automatically)
-//  4. Stop() - Shutdown and cleanup
+// Coordinator relays messages between participants with no cryptographic role: Start, WaitForParticipants, Stop.
 type Coordinator interface {
 	// Start begins listening for participant connections.
 	// Returns error if the coordinator fails to start.
@@ -219,13 +165,7 @@ type Coordinator interface {
 	WaitForParticipants(ctx context.Context, n int) error
 }
 
-// Participant interface represents a DKG participant that connects to a coordinator.
-//
-// Participants execute the FROST DKG protocol by:
-//  1. Connecting to a coordinator
-//  2. Running the DKG session with local parameters
-//  3. Receiving DKG results (threshold key, secret share, public shares)
-//  4. Disconnecting when complete
+// Participant connects to a coordinator, runs the DKG session and returns its results.
 type Participant interface {
 	// Connect establishes a connection to the coordinator at the given address.
 	// The address format depends on the transport protocol.
@@ -241,22 +181,9 @@ type Participant interface {
 	RunDKG(ctx context.Context, params *DKGParams) (*DKGResult, error)
 }
 
-// DKGParams contains parameters for a DKG session execution.
-//
-// These parameters are provided by the participant and include:
-//   - Host secret key (this participant's long-term identity key)
-//   - Host public keys (all participants' identity keys, in order)
-//   - Threshold (t-of-n threshold for signing)
-//   - Participant index (this participant's position in the host public key list)
-//   - Randomness (for DKG session, must be cryptographically secure)
+// DKGParams holds a participant's session inputs: host secret key, ordered host public keys, threshold, index and randomness.
 type DKGParams struct {
-	// HostSeckey is this participant's host secret key (32 bytes), sealed in a
-	// memguard enclave: encrypted at rest, decrypted into mlock'd memory only
-	// for the moment an operation needs it.
-	//
-	// Build it with transport.SealSecret, which copies and seals, or with
-	// secmem.NewSecretBytes if you want your source slice zeroed as it is
-	// taken. The params struct owns what you put here — Zeroize destroys it.
+	// HostSeckey is the 32-byte host secret key in an enclave (build with SealSecret); the params own it and Zeroize destroys it.
 	HostSeckey *secmem.SecretBytes
 
 	// HostPubkeys is the ordered list of all participants' host public keys.
@@ -272,32 +199,13 @@ type DKGParams struct {
 	// Must satisfy: 0 <= ParticipantIdx < len(HostPubkeys)
 	ParticipantIdx int
 
-	// Random is cryptographically secure randomness for the DKG session
-	// (32 bytes), sealed in a memguard enclave.
-	//
-	// It is a SECRET, not a nonce: combined with HostSeckey it derives the
-	// participant's session seed, so anyone holding it and the host key can
-	// reproduce the seed and therefore the share. Build it with SealSecret and
-	// let Zeroize destroy it.
+	// Random is 32 bytes of session randomness in an enclave; it is a secret, since with HostSeckey it derives the share.
 	Random *secmem.SecretBytes
 }
 
-// DKGResult contains the output of a successful DKG session.
-//
-// The result includes:
-//   - Secret share (this participant's share of the threshold key)
-//   - Threshold public key (the aggregate public key for t-of-n signing)
-//   - Public shares (verification shares for all participants)
-//   - Session ID (for correlating this session)
-//
-// The secret share must be kept confidential. All other data is public.
+// DKGResult holds the secret share (confidential), threshold public key, public shares and session ID.
 type DKGResult struct {
-	// SecretShare is this participant's share of the threshold secret key
-	// (32 bytes), sealed in a memguard enclave. It is the one secret a DKG
-	// produces, so it is never handed back as a plain slice.
-	//
-	// Read it with secmem.WithSecret and do not retain the bytes past the
-	// callback; release it with Zeroize when the share has been persisted.
+	// SecretShare is this participant's 32-byte share in an enclave; read it with secmem.WithSecret and Zeroize it once persisted.
 	SecretShare *secmem.SecretBytes
 
 	// ThresholdPubkey is the aggregate threshold public key (32 bytes, Ed25519).
@@ -343,16 +251,7 @@ func (r *DKGResult) Zeroize() {
 	r.SecretShare = nil
 }
 
-// SealSecret seals a copy of secret material in a memguard enclave, for
-// callers building a DKGParams or a DKGResult.
-//
-// It copies rather than sealing the caller's slice directly, because
-// secmem.NewSecretBytes zeroes what it is handed: a caller that still needs
-// its own buffer — reading several participants' keys out of one decoded
-// document, say — would otherwise find it wiped underneath. Use
-// secmem.NewSecretBytes directly when zeroing the source IS what you want.
-//
-// Returns nil for empty input, matching secmem.NewSecretBytes.
+// SealSecret seals a copy of secret in an enclave, leaving the caller's slice intact; nil for empty input.
 func SealSecret(secret []byte) *secmem.SecretBytes {
 	if len(secret) == 0 {
 		return nil
@@ -362,10 +261,7 @@ func SealSecret(secret []byte) *secmem.SecretBytes {
 	return secmem.NewSecretBytes(c)
 }
 
-// SessionConfig contains configuration for a coordinator DKG session.
-//
-// The coordinator uses this to validate incoming participants and
-// manage session lifecycle.
+// SessionConfig configures a coordinator's DKG session and participant validation.
 type SessionConfig struct {
 	// SessionID is the unique identifier for this session.
 	// If empty, a timestamp-based ID will be generated.

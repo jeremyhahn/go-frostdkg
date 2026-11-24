@@ -14,25 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package dkg implements share refresh functionality for FROST.
-//
-// Share refreshing has two purposes:
-// - Mitigate against share compromise
-// - Remove participants from a group
-//
-// This package supports refreshing shares using either a Trusted Dealer
-// or DKG approach. You should use the same approach as the original
-// share generation.
-//
-// For the Trusted Dealer approach, the trusted dealer calls
-// ComputeRefreshingShares and sends the returned refreshing shares to
-// the participants. Each participant then calls RefreshShare.
-//
-// For the DKG approach, the flow is similar to DKG itself. Each participant
-// calls RefreshDKGPart1, keeps the returned secret package and sends the
-// returned package to other participants. Then each participant calls
-// RefreshDKGPart2 and sends the returned packages to other participants.
-// Finally each participant calls RefreshDKGShares.
+// Share refresh (trusted dealer: ComputeRefreshingShares then RefreshShare; DKG: RefreshDKGPart1, RefreshDKGPart2, RefreshDKGShares); use the same approach as the original generation.
 
 package dkg
 
@@ -71,27 +53,7 @@ type PublicKeyPackage struct {
 	MinSigners *uint32
 }
 
-// ComputeRefreshingShares computes refreshing shares for the Trusted Dealer approach.
-//
-// This function creates new shares that can be added to existing shares to refresh them.
-// The refreshing shares are based on a zero secret, so adding them doesn't change
-// the group public key.
-//
-// Parameters:
-//   - pubKeyPackage: The current public key package
-//   - maxSigners: Number of participants refreshing their shares (can be smaller than original)
-//   - minSigners: Threshold needed to sign (must equal original value)
-//   - identifiers: Identifiers of all participants refreshing (must have length maxSigners)
-//   - cs: The ciphersuite to use
-//
-// Returns:
-//   - A slice of RefreshingShare to send to participants (in same order as identifiers)
-//   - The refreshed PublicKeyPackage
-//
-// Errors:
-//   - Returns error if minSigners doesn't match the package's value
-//   - Returns error if number of identifiers doesn't match maxSigners
-//   - Returns error if parameters are invalid
+// ComputeRefreshingShares returns zero-secret refreshing shares, in identifier order, and the refreshed PublicKeyPackage; minSigners must match the original.
 func ComputeRefreshingShares(
 	pubKeyPackage *PublicKeyPackage,
 	maxSigners uint32,
@@ -204,22 +166,7 @@ func ComputeRefreshingShares(
 	return refreshingShares, refreshedPubKeyPackage, nil
 }
 
-// RefreshShare refreshes a participant's share in the Trusted Dealer approach.
-//
-// This must be called by each participant with the refreshing share received
-// from the trusted dealer and their current key package.
-//
-// Parameters:
-//   - refreshingShare: The refreshing share received from the trusted dealer
-//   - currentKeyPackage: The participant's current key package
-//   - cs: The ciphersuite to use
-//
-// Returns:
-//   - The refreshed KeyPackage
-//
-// Errors:
-//   - Returns error if the refreshing share is invalid
-//   - Returns error if minSigners doesn't match
+// RefreshShare applies a trusted dealer's refreshing share to currentKeyPackage.
 func RefreshShare(
 	refreshingShare RefreshingShare,
 	currentKeyPackage *frost.KeyPackage,
@@ -268,24 +215,7 @@ func RefreshShare(
 	return newKeyPackage, nil
 }
 
-// RefreshDKGPart1 executes part 1 of refresh share with DKG.
-//
-// Each participant generates a polynomial with zero constant term and
-// broadcasts commitments to other participants.
-//
-// Parameters:
-//   - identifier: The participant's unique identifier
-//   - maxSigners: Number of participants refreshing (can be smaller than original)
-//   - minSigners: Threshold needed to sign (must equal original value)
-//   - cs: The ciphersuite to use
-//
-// Returns:
-//   - Round1SecretPackage to keep in memory for part 2
-//   - Round1Package to broadcast to all other participants
-//
-// Errors:
-//   - Returns error if parameters are invalid
-//   - Returns error if random generation fails
+// RefreshDKGPart1 generates a zero-constant polynomial and returns the secret package to keep and the package to broadcast.
 func RefreshDKGPart1(
 	identifier frost.Identifier,
 	maxSigners uint32,
@@ -353,23 +283,7 @@ func RefreshDKGPart1(
 	return secretPackage, publicPackage, nil
 }
 
-// RefreshDKGPart2 performs the second part of the refresh procedure.
-//
-// Each participant verifies received packages and computes shares to send
-// to other participants.
-//
-// Parameters:
-//   - secretPackage: The secret package from RefreshDKGPart1
-//   - round1Packages: Map of Round1Package from other participants
-//   - cs: The ciphersuite to use
-//
-// Returns:
-//   - Round2SecretPackage to keep for part 3
-//   - Map of Round2Package to send to each other participant
-//
-// Errors:
-//   - Returns error if incorrect number of packages
-//   - Returns error if verification fails
+// RefreshDKGPart2 verifies the round 1 packages and returns the secret package to keep and the per-participant packages to send.
 func RefreshDKGPart2(
 	secretPackage *dkg.Round1SecretPackage,
 	round1Packages map[frost.Identifier]*dkg.Round1Package,
@@ -382,8 +296,7 @@ func RefreshDKGPart2(
 		return nil, nil, NewFaultyParticipantError(0, "incorrect number of packages")
 	}
 
-	// The identity commitment needs to be added to the VSS commitment for secret package
-	// (it was removed for transmission)
+	// Restore the identity commitment removed for transmission.
 	identityElement := grp.Identity()
 
 	// Prepare round 2 packages
@@ -400,13 +313,7 @@ func RefreshDKGPart2(
 			return nil, nil, NewFaultyParticipantError(int(senderID), "incorrect commitment length")
 		}
 
-		// The sender's constant-term commitment is not transmitted (it is
-		// stripped in RefreshDKGPart1 and reconstructed as the identity here),
-		// so nothing at this point can bind the sender's actual constant term.
-		// A sender that used a non-zero constant term is caught in
-		// RefreshDKGShares, where every received share is checked against this
-		// same reconstructed commitment by VerifySecshare and fails.
-		//
+		// The sender's constant term is reconstructed as the identity; a non-zero one fails VerifySecshare in RefreshDKGShares.
 		// Compute share for this participant: f_i(senderID)
 		share := evaluatePolynomialAtIdentifier(
 			grp,
@@ -442,27 +349,7 @@ func RefreshDKGPart2(
 	return round2SecretPackage, round2Packages, nil
 }
 
-// RefreshDKGShares performs the third and final part of the refresh procedure.
-//
-// Each participant verifies received shares, accumulates them, and adds to
-// their existing share to create the refreshed share.
-//
-// Parameters:
-//   - round2SecretPackage: The secret package from RefreshDKGPart2
-//   - round1Packages: The same packages used in RefreshDKGPart2
-//   - round2Packages: Map of Round2Package from other participants
-//   - oldPubKeyPackage: The old public key package being refreshed
-//   - oldKeyPackage: The old key package being refreshed
-//   - cs: The ciphersuite to use
-//
-// Returns:
-//   - The refreshed KeyPackage with new signing share
-//   - The refreshed PublicKeyPackage with new verifying shares
-//
-// Errors:
-//   - Returns error if minSigners doesn't match
-//   - Returns error if share verification fails
-//   - Returns error if package counts are incorrect
+// RefreshDKGShares verifies and adds the received shares to the old share, returning the refreshed KeyPackage and PublicKeyPackage.
 func RefreshDKGShares(
 	round2SecretPackage *dkg.Round2SecretPackage,
 	round1Packages map[frost.Identifier]*dkg.Round1Package,
@@ -682,10 +569,7 @@ func generateRandomSeed(length int) ([]byte, error) {
 // force read failures.
 var cryptoRandRead = cryptoRead
 
-// evaluatePolynomialAtIdentifier evaluates a polynomial at a given identifier.
-// Identifiers are converted to scalars for evaluation.
-// The returned scalar holds a secret polynomial evaluation; callers must zeroize it
-// when it is no longer needed.
+// evaluatePolynomialAtIdentifier evaluates a polynomial at an identifier; the caller must zeroize the secret result.
 func evaluatePolynomialAtIdentifier(
 	grp group.Group,
 	coefficients []group.Scalar,

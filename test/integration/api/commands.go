@@ -16,13 +16,7 @@
 
 //go:build integration
 
-// Package api provides protocol-agnostic integration test framework for FROST DKG.
-//
-// This package defines centralized test actions and utilities that work across
-// all transport implementations (gRPC, HTTP, QUIC, Unix sockets, memory).
-//
-// The TestAction interface enables composable test scenarios that verify
-// protocol parity across all transports.
+// Package api provides transport-agnostic integration test actions for FROST DKG.
 package api
 
 import (
@@ -318,8 +312,7 @@ func (a *CompareResultsAction) Execute(ctx context.Context) error {
 			}
 		}
 
-		// Secret shares should be DIFFERENT (each participant has their own).
-		// Both enclaves are opened only for the length of the comparison.
+		// Secret shares must differ; each enclave is opened only for the comparison.
 		if result.SecretShare.Size() == first.SecretShare.Size() {
 			allMatch := true
 			if err := secmem.WithSecret(result.SecretShare, func(mine []byte) error {

@@ -84,9 +84,7 @@ func NewP2PParticipantFromTransportConfig(cfg *transport.Config) (*P2PParticipan
 		return nil, transport.ErrInvalidConfig
 	}
 
-	// The defaults layer owns the literal (an ephemeral port, so a participant
-	// never collides with a coordinator on the same host); a configured
-	// address overrides it, resolved the same way the coordinator's is.
+	// Default to an ephemeral port; a configured address overrides it.
 	hostCfg := DefaultHostConfig()
 	if cfg.Address != "" {
 		listenAddr, err := ParticipantListenMultiaddr(cfg.Address)
@@ -197,12 +195,7 @@ func (pp *P2PParticipant) Disconnect() error {
 	return disconnectErr
 }
 
-// RunDKG executes the FROST DKG protocol.
-//
-// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
-// join and session-info exchange happen as written, then this returns
-// transport.ErrDKGNotImplemented rather than key material. See package
-// transport and software task #61.
+// RunDKG connects and joins, then returns transport.ErrDKGNotImplemented: this transport does not run the ceremony.
 func (pp *P2PParticipant) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	if !pp.connected.Load() {
 		return nil, transport.ErrNotConnected
@@ -247,15 +240,7 @@ func (pp *P2PParticipant) validateParams(params *transport.DKGParams) error {
 	return nil
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (pp *P2PParticipant) executeDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }

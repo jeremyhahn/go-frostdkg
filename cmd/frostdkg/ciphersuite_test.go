@@ -23,12 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestValidCiphersuites_ResolveInTheLibrary is the test the secp256k1 casing
-// drift would have failed: the CLI spelled the identifier
-// FROST-SECP256K1-SHA256-v1 while the library spells it
-// FROST-secp256k1-SHA256-v1, so --ciphersuite could offer a value that
-// resolved to no ciphersuite at all. Every identifier the CLI advertises must
-// be one the library can build a generator for.
+// TestValidCiphersuites_ResolveInTheLibrary checks every CLI ciphersuite identifier resolves in the library.
 func TestValidCiphersuites_ResolveInTheLibrary(t *testing.T) {
 	suites := ValidCiphersuites()
 	require.NotEmpty(t, suites)

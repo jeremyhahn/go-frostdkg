@@ -15,13 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0-alpha] - 2026-08-15
 
-MINOR, not PATCH. The owner's ruling offered PATCH on the grounds that this is
-a behaviour correction with no new API; implementing it well needed a new
-exported sentinel (`transport.ErrDKGNotImplemented`), so callers can match with
-`errors.Is` instead of parsing a string. Added exported API is MINOR pre-1.0
-per conventions/release-versioning.md §1, and the behaviour change is breaking
-for anything that compiled against the old success return — which lands in
-MINOR too. Both routes give the same answer.
+MINOR: it adds the exported sentinel `transport.ErrDKGNotImplemented` and
+breaks callers that relied on the old success return.
 
 ### Changed — BREAKING: the network transports no longer return key material
 
@@ -156,20 +151,17 @@ return; pre-1.0, both land in MINOR.
 - The CI coverage gate no longer depends on `bc` and asserts that the coverage
   value parsed before comparing it — an unparseable value previously skipped
   the threshold silently.
-- `.env`, key and certificate patterns are now gitignored (they were not, while
-  the documented Gitea-token workflow writes `.devcontainer/.env`), and the
+- `.env`, key and certificate patterns are now gitignored (the documented
+  token workflow writes `.devcontainer/.env`), and the
   matching `.dockerignore` entries are recursive rather than root-anchored.
 
 ## [0.1.1-alpha] - 2026-08-13
 
-Cut during the dependency-resolution cutover; this entry is written
-retrospectively, as the release went out without one. Its contents are the
-commits reachable from the `v0.1.1-alpha` tag only — everything else from that
-week's work landed afterwards and appears under 0.2.0-alpha above.
+Covers the commits reachable from the `v0.1.1-alpha` tag only.
 
 ### Changed
 
-- Cross-repo dependencies resolve as tagged modules fetched from Gitea rather
+- Cross-repo dependencies resolve as tagged modules rather
   than through a shared `go.work`; `go-frost` is pinned at `v0.1.7-alpha`.
 
 ### Fixed

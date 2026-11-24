@@ -34,38 +34,12 @@ import (
 	"github.com/jeremyhahn/go-frost/pkg/secmem"
 )
 
-// HostKey represents a host identity key used for DKG operations.
-// This interface abstracts the cryptographic operations to support both
-// software keys and hardware-backed keys (TPM, HSM, etc.) where the
-// private key material is not directly accessible.
-//
-// Implementations must provide:
-//   - ECDH: Compute shared secrets for encrypting DKG shares
-//   - Sign: Create signatures for CertEq protocol
-//   - PublicKey: Return the serialized public key
+// HostKey is a DKG host identity key (ECDH, Sign, PublicKey), software or hardware-backed.
 type HostKey interface {
-	// ECDH computes a Diffie-Hellman shared secret with the given public key.
-	// For hardware-backed keys, this operation is performed inside the secure
-	// element without exposing the private key.
-	//
-	// Parameters:
-	//   - theirPubkey: The serialized public key of the other party
-	//
-	// Returns:
-	//   - sharedSecret: The raw shared secret (x-coordinate or full point)
-	//   - err: Any error that occurred during the operation
+	// ECDH returns the raw shared secret with theirPubkey; hardware keys compute it inside the secure element.
 	ECDH(theirPubkey []byte) (sharedSecret []byte, err error)
 
-	// Sign creates a signature on the given message.
-	// For hardware-backed keys, this operation is performed inside the secure
-	// element without exposing the private key.
-	//
-	// Parameters:
-	//   - message: The message to sign
-	//
-	// Returns:
-	//   - signature: The signature bytes
-	//   - err: Any error that occurred during the operation
+	// Sign signs message; hardware keys sign inside the secure element.
 	Sign(message []byte) (signature []byte, err error)
 
 	// PublicKey returns the serialized public key.
@@ -89,10 +63,7 @@ type HostKeyGenerator interface {
 // The private key is held in memory and can be used for ECDH and signing.
 type SoftwareHostKey struct {
 	cs ciphersuite.Ciphersuite
-	// secret holds the raw secret key sealed in a memguard enclave: encrypted
-	// at rest, decrypted only into mlock'd memory for the moment an operation
-	// needs it. It is never a plain []byte field, because a plain field lives
-	// on the swappable heap for the whole life of the key.
+	// secret holds the raw secret key in an enclave, decrypted into mlock'd memory only while in use.
 	secret    *secmem.SecretBytes
 	publicKey []byte
 	scalar    group.Scalar // Derived scalar for ECDH
@@ -225,12 +196,7 @@ func GenerateSoftwareHostKeyWithRNG(cs ciphersuite.Ciphersuite, rng io.Reader) (
 		return nil, ErrUnknownCiphersuite
 	}
 
-	// Zeroed on EVERY path, not just the failure one. NewSoftwareHostKeyWithRNG
-	// seals a copy and deliberately leaves this slice intact — the borrow rule,
-	// since the key it is normally handed belongs to its caller. Here the
-	// buffer is ours, so leaving it alone would strand a freshly generated
-	// host key in plain heap memory until the GC happened to collect it, which
-	// is exactly what the enclave is meant to prevent.
+	// This buffer is ours: zero it on every path, since the constructor seals a copy.
 	secretKey := make([]byte, keyLen)
 	defer secmem.ZeroBytes(secretKey)
 
@@ -256,12 +222,7 @@ func (k *SoftwareHostKey) Zeroize() {
 	k.scalar = nil
 }
 
-// zeroized reports whether Zeroize has cleared this key's secret material.
-//
-// Zeroize destroys the enclave and nils both it and the scalar, and the
-// private-key operations dereference them, so an operation attempted after
-// zeroization must be refused here rather than panicking somewhere inside the
-// group arithmetic.
+// zeroized reports whether Zeroize cleared this key, so operations fail instead of panicking.
 func (k *SoftwareHostKey) zeroized() bool {
 	return k == nil || k.scalar == nil || k.secret == nil
 }
@@ -317,8 +278,8 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 	// The enclave is open only for the two derivations that need the raw key.
 	// privKey.D keeps a big.Int copy of it, which is why it is zeroed below.
 	if err := secmem.WithSecret(k.secret, func(sk []byte) error {
-		privKey.D = new(big.Int).SetBytes(sk)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
-		privKey.X, privKey.Y = curve.ScalarBaseMult(sk) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+		privKey.D = new(big.Int).SetBytes(sk)           //nolint:staticcheck // SA1019: crypto/ecdh migration pending.
+		privKey.X, privKey.Y = curve.ScalarBaseMult(sk) //nolint:staticcheck // SA1019: crypto/ecdh migration pending.
 		return nil
 	}); err != nil {
 		return nil, ErrHostKeySignFailed
@@ -331,12 +292,12 @@ func (k *SoftwareHostKey) signP256(message []byte) ([]byte, error) {
 		return nil, ErrHostKeySignFailed
 	}
 	// Securely zero the big.Int's internal representation
-	if dWords := privKey.D.Bits(); len(dWords) > 0 { //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+	if dWords := privKey.D.Bits(); len(dWords) > 0 { //nolint:staticcheck // SA1019: crypto/ecdh migration pending.
 		for i := range dWords {
 			dWords[i] = 0
 		}
 	}
-	privKey.D.SetInt64(0) //nolint:staticcheck // SA1019: crypto/ecdh migration pending owner approval — tracked in automatethethings software dept; deliberate deferral 2026-08-14
+	privKey.D.SetInt64(0) //nolint:staticcheck // SA1019: crypto/ecdh migration pending.
 
 	// Encode as 64 bytes (32 bytes r + 32 bytes s)
 	sig := make([]byte, 64)
@@ -405,16 +366,7 @@ func (k *SoftwareHostKey) PublicKey() []byte {
 	return k.publicKey
 }
 
-// SecretKey returns a copy of the secret key bytes.
-//
-// This is the one path by which the secret leaves protected memory, and it
-// exists because HostKeyGenerator.LoadHostKey documents software keys as
-// exportable — persisting and reloading a host key needs it. The copy it
-// returns is an ordinary heap slice on the caller's swappable heap: whoever
-// calls this owns the exposure and must ZeroBytes the result as soon as it has
-// been consumed. Hardware-backed keys do not expose this at all.
-//
-// Returns nil if the key has been zeroized.
+// SecretKey returns a heap copy of the secret key, nil once zeroized; the caller must ZeroBytes it after use.
 func (k *SoftwareHostKey) SecretKey() []byte {
 	if k.zeroized() {
 		return nil
@@ -430,16 +382,7 @@ func (k *SoftwareHostKey) SecretKey() []byte {
 	return result
 }
 
-// zeroBigInt best-effort overwrites a big.Int's magnitude in place.
-//
-// ecdsa.PrivateKey.D holds a copy of the raw secret on the ordinary heap, and
-// nothing zeroed it before the enclave migration. This is an improvement, not
-// a guarantee: SetBytes reuses the existing backing array when the capacity
-// allows — which it does here, the length being unchanged — so the words are
-// overwritten in practice, but math/big promises nothing about that, and
-// ecdsa.Sign may have made copies of its own that are equally out of reach.
-// Scrubbing what we can reach is worth doing; claiming the secret is gone from
-// the heap afterwards would not be true.
+// zeroBigInt best-effort overwrites a big.Int's magnitude in place; math/big does not guarantee it.
 func zeroBigInt(n *big.Int) {
 	if n == nil {
 		return
@@ -506,10 +449,7 @@ func VerifyHostKeySignature(cs ciphersuite.Ciphersuite, publicKey, message, sign
 	}
 }
 
-// verifyP256Signature verifies an ECDSA signature.
-// p256PublicKey builds an ECDSA public key from affine coordinates through the
-// validating parser, as setting ecdsa.PublicKey.X/Y directly is deprecated.
-// Coordinates must each fit in 32 bytes; a point off the curve is rejected.
+// p256PublicKey builds an ECDSA public key through the validating parser; coordinates fit 32 bytes and must be on the curve.
 func p256PublicKey(curve elliptic.Curve, x, y *big.Int) (*ecdsa.PublicKey, error) {
 	if x.BitLen() > 256 || y.BitLen() > 256 {
 		return nil, ErrInvalidPublicKey
@@ -619,13 +559,7 @@ func verifySchnorrSignature(cs ciphersuite.Ciphersuite, grp group.Group, publicK
 	return nil
 }
 
-// CiphersuiteByID returns the ciphersuite named by a FROST ciphersuite
-// identifier, or ErrUnknownCiphersuite if the identifier names none.
-//
-// The identifiers are wire values that arrive from configuration, a command
-// line, or a peer's session-info message, so resolving one is a normal need
-// outside this package — and doing it locally is how a caller ends up with a
-// second copy of the strings and, eventually, a copy that has drifted.
+// CiphersuiteByID returns the ciphersuite for a FROST identifier, or ErrUnknownCiphersuite.
 func CiphersuiteByID(id string) (ciphersuite.Ciphersuite, error) {
 	switch id {
 	case CiphersuiteP256:

@@ -131,10 +131,7 @@ func (s *UnixServer) Start(ctx context.Context) error {
 		return transport.NewConnectionError(s.config.Address, err)
 	}
 
-	// net.Listen creates the socket with 0777 &^ umask, which on a typical
-	// umask leaves it connectable by every local account. There is no peer
-	// authentication on this transport, so the file mode is the only access
-	// control it has.
+	// The socket mode is this transport's only access control: there is no peer authentication.
 	if err := os.Chmod(s.config.Address, 0o600); err != nil {
 		_ = listener.Close()
 		return transport.NewConnectionError(s.config.Address, err)
@@ -485,12 +482,7 @@ func (c *UnixClient) Disconnect() error {
 	return nil
 }
 
-// RunDKG executes the FROST DKG protocol.
-//
-// EXPERIMENTAL: this transport does not run the DKG ceremony. The connection,
-// join and session-info exchange happen as written, then this returns
-// transport.ErrDKGNotImplemented rather than key material. See package
-// transport and software task #61.
+// RunDKG connects and joins, then returns transport.ErrDKGNotImplemented: this transport does not run the ceremony.
 func (c *UnixClient) RunDKG(ctx context.Context, params *transport.DKGParams) (*transport.DKGResult, error) {
 	if !c.connected.Load() {
 		return nil, transport.ErrNotConnected
@@ -578,15 +570,7 @@ func (c *UnixClient) waitForSessionInfo(ctx context.Context) (*transport.Session
 	}
 }
 
-// executeDKG would run the DKG protocol rounds. It does not: this transport
-// carries the protocol messages but never drives the ceremony, so it has no
-// key material to return.
-//
-// It previously built a DKGResult from a fixed pattern derived from the
-// participant index and returned it with a nil error, which no caller could
-// tell apart from a real ceremony. Failing closed is the only safe behaviour
-// until the transport is wired to the real pkg/dkg driver (tracked as
-// software task #61).
+// executeDKG returns ErrDKGNotImplemented: this transport does not drive the ceremony.
 func (c *UnixClient) executeDKG(ctx context.Context, params *transport.DKGParams, sessionInfo *transport.SessionInfoMessage) (*transport.DKGResult, error) {
 	return nil, transport.ErrDKGNotImplemented
 }

@@ -41,10 +41,7 @@ const (
 	CiphersuiteSecp256k1 = "FROST-secp256k1-SHA256-v1"
 )
 
-// scalarFromInt creates a scalar from an integer value.
-// This is a helper to simplify creating small scalar values.
-//
-// Panics if n is negative or if deserialization fails (indicating a bug).
+// scalarFromInt creates a scalar from a small integer; panics if n is negative.
 func scalarFromInt(grp group.Group, n int) group.Scalar {
 	if n < 0 {
 		panic("scalarFromInt: negative integer not allowed")
@@ -101,15 +98,7 @@ func xorBytes(a, b []byte) []byte {
 	return result
 }
 
-// sealCopy seals a copy of secret material in a memguard enclave.
-//
-// It copies deliberately. secmem.NewSecretBytes zeroes the slice it is handed,
-// so sealing the caller's slice directly would wipe memory the caller still
-// owns — the borrow-vs-own rule that already governs HostKey. Copying keeps
-// the state's secret and the caller's slice independent, so the state can own
-// (and destroy) its own copy.
-//
-// Returns nil for empty input, matching secmem.NewSecretBytes.
+// sealCopy seals a copy of secret, so the caller's slice stays intact; nil for empty input.
 func sealCopy(secret []byte) *secmem.SecretBytes {
 	if len(secret) == 0 {
 		return nil

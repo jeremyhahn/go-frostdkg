@@ -270,8 +270,7 @@ func TestFROSTDKGEncCoordinatorRound1Errors(t *testing.T) {
 	})
 }
 
-// TestFROSTDKGEncParticipantRound2Errors tests encrypted Round 2 error handling.
-// Tests error paths for FROSTDKGEncParticipantRound2 (non-HostKey version).
+// TestFROSTDKGEncParticipantRound2Errors tests the error paths of FROSTDKGEncParticipantRound2.
 func TestFROSTDKGEncParticipantRound2Errors(t *testing.T) {
 	cs := ed25519_sha512.New()
 	grp := cs.Group()
@@ -404,8 +403,7 @@ func TestFROSTDKGEncParticipantRound2Errors(t *testing.T) {
 	})
 
 	t.Run("deserialization_error_their_pubnonce", func(t *testing.T) {
-		// Test error path at line 948-951: theirPubnonce deserialization fails
-		// Create coordinator message with invalid pubnonce
+		// A coordinator message with an invalid pubnonce fails deserialization.
 		corruptedCoordMsg := &FROSTDKGEncCoordinatorMsg{
 			FROSTDKGCoordinatorMsg: validCoordMsg.FROSTDKGCoordinatorMsg,
 			AllPubnonces: [][]byte{

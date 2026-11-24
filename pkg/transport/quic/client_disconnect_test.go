@@ -25,21 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDisconnect_DoesNotHoldTheLockWhileWaiting pins the invariant whose
-// absence deadlocked CI run 4495: Disconnect waits on the receive goroutine,
-// and that goroutine takes connMu.RLock on every iteration, so Disconnect
-// must not be holding connMu while it waits.
-//
-// The test asserts the invariant directly rather than trying to reproduce the
-// race. Reproducing it needs the receive goroutine to reach its RLock in the
-// window where Disconnect holds the write lock, which is a scheduling
-// coincidence and not something a test should be built on. Blocking the
-// waited-for goroutine on a channel the test controls puts Disconnect in
-// exactly the state that matters — parked in wg.Wait — and then asks the one
-// question that decides whether a real receive loop could make progress: is
-// the lock free?
-//
-// It cannot hang either way: the goroutine is always released.
+// TestDisconnect_DoesNotHoldTheLockWhileWaiting checks connMu is free while Disconnect waits on the receive goroutine.
 func TestDisconnect_DoesNotHoldTheLockWhileWaiting(t *testing.T) {
 	c := &QUICClient{
 		incomingChan: make(chan *transport.Envelope, 1),
@@ -110,16 +96,7 @@ func TestDisconnect_WhenNotConnected(t *testing.T) {
 	c.connMu.Unlock()
 }
 
-// TestConnect_RefusedWhileAndAfterTeardown covers the window that releasing
-// connMu early would otherwise open: with `connected` already false, a
-// concurrent Connect could install a fresh conn and stream, and the Disconnect
-// still winding down would close THAT connection instead of the one it was
-// tearing down.
-//
-// Disconnect no longer re-reads c.conn after the wait, so it can only close
-// what it took, and Connect refuses outright once a Disconnect has begun — the
-// client's shutdownChan is created once and closed there, so a reconnected
-// client's receive goroutine would exit immediately anyway (#21).
+// TestConnect_RefusedWhileAndAfterTeardown checks Connect is refused once Disconnect has begun.
 func TestConnect_RefusedWhileAndAfterTeardown(t *testing.T) {
 	c := &QUICClient{
 		config:       &transport.Config{Protocol: transport.ProtocolQUIC},

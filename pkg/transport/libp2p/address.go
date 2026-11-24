@@ -33,35 +33,12 @@ const DefaultCoordinatorPort = 9000
 // address names no host.
 const defaultListenHost = "0.0.0.0"
 
-// ListenMultiaddr converts a transport address into the multiaddr form libp2p
-// requires for a listen address.
-//
-// The rest of the transport layer speaks "host:port" (transport.Config.Address)
-// while libp2p speaks multiaddrs, and every conversion site needs the same
-// three defaults. Accepted forms:
-//
-//   - "" — the whole default, /ip4/0.0.0.0/tcp/9000
-//   - "host:port" — an IPv4 or IPv6 literal, or a DNS name
-//   - "host" — the host with DefaultCoordinatorPort
-//   - a multiaddr already ("/ip4/…") — validated and returned unchanged, so a
-//     configuration written in libp2p's own notation keeps working
-//
-// An empty host means 0.0.0.0; an empty or zero port means
-// DefaultCoordinatorPort. Port 0 is not honoured as "pick one" here: a
-// coordinator has to publish an address participants can dial, and the
-// ephemeral-port case is the participant's, not the coordinator's.
-//
-// A DNS name is RESOLVED here rather than rendered from its spelling, so this
-// function does name lookup for that one input shape — see listenProtocol. A
-// name that resolves to nothing is rejected as an invalid address, which is
-// where it would fail anyway, only later and less legibly.
+// ListenMultiaddr converts "", "host:port", "host" or a multiaddr to a libp2p listen multiaddr (default 0.0.0.0:DefaultCoordinatorPort); DNS names are resolved.
 func ListenMultiaddr(address string) (string, error) {
 	return listenMultiaddr(address, DefaultCoordinatorPort)
 }
 
-// ParticipantListenMultiaddr is ListenMultiaddr for a participant: a missing
-// or zero port stays 0, so the OS picks an ephemeral port and a participant
-// never collides with a coordinator on the same host.
+// ParticipantListenMultiaddr is ListenMultiaddr with a missing or zero port left 0, so the OS picks one.
 func ParticipantListenMultiaddr(address string) (string, error) {
 	return listenMultiaddr(address, 0)
 }
@@ -114,13 +91,7 @@ func listenMultiaddr(address string, defaultPort int) (string, error) {
 	return maddr, nil
 }
 
-// listenProtocol returns the multiaddr protocol component for a listen host.
-//
-// An IP literal answers itself. A hostname has to be resolved, because the
-// choice between dns4 and dns6 is not a property of the name: libp2p refuses
-// the family-neutral /dns protocol for a listen address outright ("can only
-// dial TCP over IPv4 or IPv6"), dns4 resolves A records only, and dns6 AAAA
-// only — so naming an AAAA-only host as dns4 makes it unbindable.
+// listenProtocol returns the multiaddr protocol for a listen host, resolving hostnames to choose dns4 or dns6.
 func listenProtocol(host string) (string, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.To4() != nil {
@@ -136,11 +107,7 @@ func listenProtocol(host string) (string, error) {
 	return dnsProtocolFor(ips)
 }
 
-// dnsProtocolFor picks the dns multiaddr protocol matching the address
-// families a hostname actually resolved to, preferring IPv4 where the name
-// offers both — that is the family libp2p's TCP listener reaches first, and
-// picking the other one for a dual-stack name would change what an existing
-// deployment binds.
+// dnsProtocolFor picks dns4 or dns6 from the resolved families, preferring IPv4.
 func dnsProtocolFor(ips []net.IP) (string, error) {
 	hasIPv6 := false
 	for _, ip := range ips {

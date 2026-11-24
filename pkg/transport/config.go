@@ -46,17 +46,7 @@ const (
 	PublicKeySize = 32
 )
 
-// NewConfig creates a new Config with default values.
-//
-// The returned config has:
-//   - Protocol: ProtocolGRPC
-//   - CodecType: "json"
-//   - Timeout: 30 seconds
-//   - MaxMessageSize: 1MB
-//   - KeepAlive: true
-//   - KeepAliveInterval: 30 seconds
-//
-// Callers should set Address and other protocol-specific fields.
+// NewConfig returns gRPC, JSON, 30s timeout, 1MB messages and 30s keepalive; callers set Address.
 func NewConfig() *Config {
 	return &Config{
 		Protocol:          ProtocolGRPC,
@@ -108,10 +98,7 @@ func NewMemoryConfig(identifier string) *Config {
 	return cfg
 }
 
-// NewTLSConfig creates a Config with TLS enabled.
-//
-// For server-side TLS, provide certFile and keyFile.
-// For mTLS (mutual TLS), also provide caFile.
+// NewTLSConfig returns a TLS config; caFile enables mTLS.
 func NewTLSConfig(protocol Protocol, address, certFile, keyFile, caFile string) *Config {
 	cfg := NewConfig()
 	cfg.Protocol = protocol
@@ -122,15 +109,7 @@ func NewTLSConfig(protocol Protocol, address, certFile, keyFile, caFile string) 
 	return cfg
 }
 
-// Validate checks if the configuration is valid.
-//
-// Returns an error if:
-//   - Protocol is not supported
-//   - Address is empty (except for memory protocol)
-//   - TLS cert/key files don't exist (if TLS is configured)
-//   - Timeout is zero or negative
-//   - MaxMessageSize is zero or negative
-//   - CodecType is empty
+// Validate checks protocol, address, TLS files, timeout, message size and codec.
 func (c *Config) Validate() error {
 	if c == nil {
 		return ErrInvalidConfig

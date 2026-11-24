@@ -1374,14 +1374,7 @@ func TestGRPCClientRunDKG(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for result or timeout.
-	//
-	// The connect/join/session-info exchange above is real and must still
-	// succeed; what must NOT happen is a DKGResult coming back. This transport
-	// does not run the ceremony, so RunDKG fails closed with
-	// ErrDKGNotImplemented. It previously returned a result whose SecretShare
-	// was a fixed pattern derived from the participant index, and this test
-	// asserted only its LENGTH — which that fabricated value satisfied.
+	// Connect and join must succeed; RunDKG must fail with ErrDKGNotImplemented, not return a result.
 	select {
 	case <-done:
 		if !errors.Is(dkgErr, transport.ErrDKGNotImplemented) {
@@ -3056,19 +3049,7 @@ func TestUnixServerParticipantStreamShutdown(t *testing.T) {
 		t.Fatalf("failed to create stream: %v", err)
 	}
 
-	// Stop the server while the stream is active, with a BOUNDED context.
-	//
-	// Coordinator.Stop is documented to wait "for active sessions to complete
-	// or context timeout", so context.Background() means wait forever -- and
-	// this test deliberately leaves a stream open that nothing will ever
-	// complete. GracefulStop then blocks on that RPC, the handler is parked in
-	// stream.Recv() and cannot see the closed shutdownChan, and Stop's select
-	// has no other arm: context.Background().Done() is nil, which blocks
-	// forever. That deadlocked main at adb114ce (run 5391, 5-minute timeout).
-	//
-	// A deadline gives Stop the forceful arm it needs: server.Stop() cancels
-	// the active RPC, the handler's Recv errors out, and shutdown completes --
-	// which is also what makes the assertion below meaningful.
+	// A bounded context: with an open stream, Stop needs the deadline to force shutdown instead of waiting forever.
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
 

@@ -26,8 +26,7 @@ import (
 	"github.com/jeremyhahn/go-frostdkg/pkg/transport/quic"
 )
 
-// TransportFactory creates transport layer components (coordinators and participants).
-// This interface enables dependency injection for testing.
+// TransportFactory creates coordinators and participants; injectable for tests.
 type TransportFactory interface {
 	// NewParticipant creates a new participant for the given protocol.
 	NewParticipant(protocol transport.Protocol, cfg *transport.Config) (transport.Participant, error)
@@ -77,6 +76,5 @@ func (f *DefaultTransportFactory) NewCoordinator(proto transport.Protocol, cfg *
 	}
 }
 
-// Default factory instance used by the package.
-// Can be overridden in tests for dependency injection.
+// Default factory instance; tests may override it.
 var defaultFactory TransportFactory = &DefaultTransportFactory{}

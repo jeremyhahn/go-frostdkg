@@ -14,20 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package testvectors provides RFC 9591 DKG test vectors for FROST ciphersuites.
-//
-// This package embeds the official FROST DKG test vectors from the reference
-// implementation and provides Go structs and functions to access them for testing
-// purposes. The test vectors include configuration, participant data, signing keys,
-// VSS commitments, and proofs of knowledge for multiple ciphersuites.
-//
-// Supported ciphersuites:
-//
-// - Ed25519 with SHA-512
-// - Ed448 with SHAKE256
-// - P-256 with SHA-256
-// - ristretto255 with SHA-512
-// - secp256k1 with SHA-256
+// Package testvectors embeds the RFC 9591 DKG test vectors for Ed25519, Ed448, P-256, ristretto255 and secp256k1.
 package testvectors
 
 import (

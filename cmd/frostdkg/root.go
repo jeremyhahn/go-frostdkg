@@ -52,13 +52,7 @@ var (
 	insecure    bool
 )
 
-// Ciphersuite constants, aliased from the package that owns them.
-//
-// These were literals until the secp256k1 one drifted: the CLI spelled it
-// FROST-SECP256K1-SHA256-v1 while RFC 9591 and dkg.CiphersuiteSecp256k1 spell
-// it FROST-secp256k1-SHA256-v1, so selecting secp256k1 from the command line
-// resolved to nothing. A second copy of a wire identifier cannot be kept
-// correct by discipline; aliasing makes drift impossible.
+// Ciphersuite constants, aliased from the package that owns them so the identifiers cannot drift.
 const (
 	CiphersuiteEd25519      = dkg.CiphersuiteEd25519
 	CiphersuiteRistretto255 = dkg.CiphersuiteRistretto255

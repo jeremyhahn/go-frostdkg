@@ -14,46 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package dkg provides FROST-DKG, a modular distributed key generation protocol
-// that works with any FROST ciphersuite from RFC 9591.
-//
-// This implementation is aligned with the Zcash FROST reference implementation
-// (https://github.com/ZcashFoundation/frost) and follows RFC 9591 requirements.
-//
-// # Supported Ciphersuites
-//
-// FROST-DKG uses the ciphersuite's hash functions (H1-H5) for all cryptographic
-// operations, enabling support for all RFC 9591 curves:
-//   - P-256
-//   - Ed25519
-//   - ristretto255
-//   - Ed448
-//   - secp256k1
-//
-// # Security Requirements
-//
-// Per Zcash FROST and RFC 9591, this implementation enforces:
-//   - Minimum threshold (min_signers) of 2 - a threshold of 1 provides no security
-//   - Minimum participants (max_signers) of 2
-//   - Maximum participants limited to prevent DoS attacks
-//
-// # Transport Security
-//
-// IMPORTANT: This implementation follows Zcash FROST's security model:
-//
-// Round 1 packages (commitments and proofs) can be sent over a public broadcast
-// channel as they contain no secret information.
-//
-// Round 2 packages (secret shares) MUST be sent over a CONFIDENTIAL and
-// AUTHENTICATED channel. The recommended approach is to use TLS 1.3, QUIC,
-// or another secure transport protocol. Application-level encryption is NOT
-// provided by default - transport security is delegated to the network layer.
-//
-// # Memory Security
-//
-// Use the Zeroize functions (ZeroBytes, SecretPackage.Zeroize) to clear
-// sensitive data from memory when no longer needed. This is aligned with
-// Zcash FROST's Zeroize trait pattern.
+// Package dkg provides FROST-DKG for every RFC 9591 ciphersuite; round 2 shares must travel over a confidential, authenticated channel.
 package dkg
 
 import (
@@ -105,19 +66,7 @@ type FROSTDKGOutput struct {
 	PublicShares []group.Element
 }
 
-// Zeroize clears sensitive data from the output.
-//
-// SECURITY NOTE: Due to Go's type system, this cannot directly zero the memory
-// holding scalar/element values. The group interfaces don't expose internal
-// byte storage. This method sets all references to nil to make them GC-eligible.
-//
-// For more thorough zeroization, use ZeroizeWithGroup which attempts to
-// overwrite scalar data before niling references.
-//
-// For maximum security in high-assurance environments:
-//   - Use group implementations that support secure zeroization
-//   - Call runtime.GC() after Zeroize() if needed
-//   - Consider memory isolation techniques (mlock, etc.)
+// Zeroize drops references to the output's secrets; use ZeroizeWithGroup to overwrite scalar data first.
 func (o *FROSTDKGOutput) Zeroize() {
 	if o == nil {
 		return
@@ -163,9 +112,7 @@ type FROSTDKGParticipantState struct {
 	NumParticipants int
 	VSS             *VSS
 	Commitment      *VSSCommitment
-	// Seed is the participant's session seed, sealed in a memguard enclave.
-	// The state OWNS this secret -- it is created from a copy of whatever the
-	// caller supplied -- so Zeroize destroys it.
+	// Seed is the participant's session seed in an enclave; the state owns it and Zeroize destroys it.
 	Seed *secmem.SecretBytes
 }
 
@@ -230,19 +177,7 @@ func FROSTDKGGenerateVSS(cs ciphersuite.Ciphersuite, seed []byte, t int) (*VSS, 
 	return NewVSS(grp, poly)
 }
 
-// FROSTDKGProveKnowledge creates a proof of possession (Schnorr signature)
-// proving knowledge of the secret key corresponding to a public key.
-//
-// This implementation follows the RFC 9591 FROST DKG specification:
-// - Challenge: c = HDKG(identifier || verifying_key || R)
-// - Response: μ = k + a_0 * c
-// - Proof: σ = (R, μ)
-//
-// Parameters:
-//   - cs: The ciphersuite to use for cryptographic operations.
-//   - secret: The secret value (a_0, first coefficient of the polynomial).
-//   - pubkey: The public key corresponding to the secret (g^a_0).
-//   - index: The participant's 0-indexed index (converted to 1-indexed identifier internally).
+// FROSTDKGProveKnowledge creates the RFC 9591 proof of possession (R, mu) for secret a_0 of participant index.
 func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pubkey group.Element, index int) ([]byte, error) {
 	grp := cs.Group()
 
@@ -250,10 +185,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	identifierScalar := indexToIdentifierScalar(grp, index)
 	identifierBytes := grp.SerializeScalar(identifierScalar)
 
-	// Generate deterministic nonce following RFC 6979 pattern for reproducibility:
-	// k = H3("FROST-DKG/pop nonce" || secret || pubkey || identifier)
-	// Including pubkey provides additional domain separation and follows
-	// RFC 6979 best practices for deterministic signature nonces.
+	// Deterministic nonce: k = H3("FROST-DKG/pop nonce" || secret || pubkey || identifier).
 	secretBytes := grp.SerializeScalar(secret)
 	defer secmem.ZeroBytes(secretBytes)
 	pubkeyBytes, err := grp.SerializeElement(pubkey)
@@ -278,8 +210,7 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 		return nil, err
 	}
 
-	// RFC 9591 Challenge: c = HDKG(identifier || verifying_key || R)
-	// where identifier is serialized as a scalar
+	// RFC 9591 challenge: c = HDKG(identifier || verifying_key || R), identifier as a scalar.
 	challengeInput := make([]byte, len(identifierBytes)+len(pubkeyBytes)+len(RBytes))
 	copy(challengeInput, identifierBytes)
 	copy(challengeInput[len(identifierBytes):], pubkeyBytes)
@@ -302,29 +233,14 @@ func FROSTDKGProveKnowledge(cs ciphersuite.Ciphersuite, secret group.Scalar, pub
 	return pop, nil
 }
 
-// indexToIdentifierScalar converts a 0-indexed participant index to a
-// 1-indexed RFC 9591 identifier scalar.
-//
-// In RFC 9591, identifiers are 1-indexed non-zero scalars. This function
-// takes a 0-indexed participant index (0, 1, 2, ...) and converts it to
-// the corresponding RFC 9591 identifier (1, 2, 3, ...) as a scalar.
+// indexToIdentifierScalar converts a 0-based participant index to the 1-based RFC 9591 identifier scalar.
 func indexToIdentifierScalar(grp group.Group, index int) group.Scalar {
 	// Convert 0-indexed to 1-indexed: identifier = index + 1
 	identifier := index + 1
 	return scalarFromInt(grp, identifier)
 }
 
-// FROSTDKGVerifyPOP verifies a proof of possession.
-//
-// This implementation follows the RFC 9591 FROST DKG specification:
-// - Recompute challenge: c = HDKG(identifier || verifying_key || R)
-// - Verify: R == g^μ - verifying_key * c (equivalently: g^μ == R + c * pubkey)
-//
-// Parameters:
-//   - cs: The ciphersuite to use for cryptographic operations.
-//   - pop: The proof of possession (R || μ).
-//   - pubkey: The public key (verifying key) to verify against.
-//   - index: The participant's 0-indexed index (converted to 1-indexed identifier internally).
+// FROSTDKGVerifyPOP verifies a proof of possession: g^mu == R + c * pubkey.
 func FROSTDKGVerifyPOP(cs ciphersuite.Ciphersuite, pop []byte, pubkey group.Element, index int) bool {
 	grp := cs.Group()
 
@@ -380,14 +296,7 @@ func FROSTDKGVerifyPOP(cs ciphersuite.Ciphersuite, pop []byte, pubkey group.Elem
 	return subtle.ConstantTimeCompare(muGBytes, RcPubkeyBytes) == 1
 }
 
-// FROSTDKGParticipantRound1 performs the first round of FROST-DKG for a participant.
-// Returns the participant's state, message, and secret shares for other participants.
-//
-// Parameters are validated per Zcash FROST requirements:
-// - t (threshold/min_signers) must be >= MinThreshold (2)
-// - n (max_signers) must be >= MinParticipants (2) and <= MaxParticipants
-// - t must be <= n
-// - index must be in range [0, n)
+// FROSTDKGParticipantRound1 runs round 1 for a participant; requires 2 <= t <= n <= MaxParticipants and 0 <= index < n.
 func FROSTDKGParticipantRound1(cs ciphersuite.Ciphersuite, seed []byte, t, n, index int) (*FROSTDKGParticipantState, *FROSTDKGParticipantMsg, []group.Scalar, error) {
 	// Validate min_signers (threshold) per Zcash FROST
 	if t < MinThreshold {
@@ -450,14 +359,7 @@ func FROSTDKGParticipantRound1(cs ciphersuite.Ciphersuite, seed []byte, t, n, in
 	return state, msg, shares, nil
 }
 
-// FROSTDKGCoordinatorRound1 processes round 1 messages from all participants.
-// Returns the coordinator's message for round 2.
-//
-// Parameters are validated per Zcash FROST requirements:
-// - t (threshold/min_signers) must be >= MinThreshold (2)
-// - n (max_signers) must be >= MinParticipants (2) and <= MaxParticipants
-// - t must be <= n
-// - len(msgs) must equal n
+// FROSTDKGCoordinatorRound1 combines the n round 1 messages into the round 2 coordinator message.
 func FROSTDKGCoordinatorRound1(cs ciphersuite.Ciphersuite, msgs []*FROSTDKGParticipantMsg, t, n int) (*FROSTDKGCoordinatorMsg, error) {
 	// Validate min_signers (threshold) per Zcash FROST
 	if t < MinThreshold {
@@ -726,10 +628,7 @@ func FROSTDKGCoordinatorOutput(cs ciphersuite.Ciphersuite, commitments []*VSSCom
 // FROSTDKGEncParticipantState holds state for encrypted FROST-DKG.
 type FROSTDKGEncParticipantState struct {
 	*FROSTDKGParticipantState
-	// HostSeckey is the participant's host secret key, sealed in a memguard
-	// enclave. The state OWNS this secret -- it is created from a copy of
-	// whatever the caller supplied -- so Zeroize destroys it, and the caller's
-	// own slice is left alone.
+	// HostSeckey is the host secret key in an enclave; the state owns this copy and Zeroize destroys it.
 	HostSeckey  *secmem.SecretBytes
 	HostPubkeys [][]byte
 	Pubnonce    group.Element
@@ -768,10 +667,7 @@ type FROSTDKGEncCoordinatorMsg struct {
 	AllPubnonces [][]byte
 }
 
-// deriveHostScalar derives the ECDH scalar from the host secret key.
-// This must be consistent with how the corresponding Signer derives its internal scalar.
-// - P256: uses the key bytes directly as the scalar (ECDSA private key format)
-// - Ed25519, Ristretto255, Ed448, Secp256k1: use H3(secretKey) to derive the scalar
+// deriveHostScalar derives the ECDH scalar as the Signer does: P256 uses the key bytes, the other suites H3(secretKey).
 func deriveHostScalar(cs ciphersuite.Ciphersuite, hostSeckey []byte) (group.Scalar, error) {
 	grp := cs.Group()
 
@@ -925,9 +821,7 @@ func FROSTDKGEncParticipantRound1(
 			return nil, nil, NewFaultyParticipantError(j, "host public key is the identity element")
 		}
 
-		// For encryption, we use our own pubnonce for both positions since
-		// the receiver doesn't have their pubnonce yet. The receiver will
-		// use our pubnonce (from coordinator) for both positions to match.
+		// Use our pubnonce in both positions; the receiver does the same with ours from the coordinator.
 		pad, err := frostDKGECDH(cs, hostSeckey, pubnonce, theirPubkey, pubnonce, true)
 		if err != nil {
 			secmem.ZeroBytes(shareBytes)
@@ -1037,9 +931,7 @@ func FROSTDKGEncParticipantRound2(
 	myIndex := state.Index
 	scalarLen := grp.ScalarLength()
 
-	// The coordinator is untrusted: validate every slice this loop indexes by j
-	// before indexing it, or a short message from the coordinator panics the
-	// participant instead of failing the round.
+	// The coordinator is untrusted: validate every slice indexed by j so a short message fails the round instead of panicking.
 	if len(coordMsg.AllPubnonces) != n {
 		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
 	}
@@ -1430,10 +1322,7 @@ func frostDKGECDHWithHostKey(cs ciphersuite.Ciphersuite, hostKey HostKey, myPubn
 	return pad, nil
 }
 
-// FROSTDKGEncParticipantStateHK holds encrypted DKG state with HostKey support.
-//
-// HostKey is borrowed, not owned: see the ownership rule on
-// FROSTDKGEncParticipantRound1WithHostKey.
+// FROSTDKGEncParticipantStateHK holds encrypted DKG state with a borrowed HostKey.
 type FROSTDKGEncParticipantStateHK struct {
 	*FROSTDKGParticipantState
 	HostKey     HostKey
@@ -1441,11 +1330,7 @@ type FROSTDKGEncParticipantStateHK struct {
 	Pubnonce    group.Element
 }
 
-// Zeroize clears sensitive data from the state.
-//
-// The HostKey is BORROWED from the caller, so Zeroize drops the reference
-// without destroying the key. Zeroizing it here would wipe a long-lived
-// identity key the caller still owns and the rest of the ceremony still needs.
+// Zeroize clears the state's secrets and drops the borrowed HostKey without destroying it.
 func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 	if s == nil {
 		return
@@ -1458,13 +1343,7 @@ func (s *FROSTDKGEncParticipantStateHK) Zeroize() {
 	s.Pubnonce = nil
 }
 
-// FROSTDKGEncParticipantRound1WithHostKey performs encrypted round 1 using HostKey.
-//
-// The caller retains ownership of hostKey. The returned state borrows it for
-// the duration of the ceremony and never destroys it, so the caller is the one
-// that must Zeroize the key when the key itself — not this session — is done.
-// A host key is a long-lived identity key: the same key signs both steps of a
-// ceremony and typically outlives many of them.
+// FROSTDKGEncParticipantRound1WithHostKey performs encrypted round 1; the caller owns hostKey and must Zeroize it when done with the key.
 func FROSTDKGEncParticipantRound1WithHostKey(
 	cs ciphersuite.Ciphersuite,
 	seed []byte,
@@ -1590,9 +1469,7 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 		return nil, nil, ErrFROSTDKGDecryptionFailed
 	}
 
-	// The coordinator is untrusted: validate every slice this loop indexes by j
-	// before indexing it, or a short message from the coordinator panics the
-	// participant instead of failing the round.
+	// The coordinator is untrusted: validate every slice indexed by j so a short message fails the round instead of panicking.
 	if len(coordMsg.AllPubnonces) != n {
 		return nil, nil, NewFaultyCoordinatorError("incorrect number of public nonces")
 	}
@@ -1664,10 +1541,7 @@ func FROSTDKGEncParticipantRound2WithHostKey(
 // Full FROST-DKG with HostKey Support
 // =============================================================================
 
-// FROSTDKGFullParticipantStateHK1 holds state after round 1 with HostKey.
-//
-// HostKey is borrowed, not owned: see the ownership rule on
-// FROSTDKGEncParticipantRound1WithHostKey.
+// FROSTDKGFullParticipantStateHK1 holds state after round 1 with a borrowed HostKey.
 type FROSTDKGFullParticipantStateHK1 struct {
 	EncState    *FROSTDKGEncParticipantStateHK
 	HostKey     HostKey
@@ -1675,10 +1549,7 @@ type FROSTDKGFullParticipantStateHK1 struct {
 	Threshold   int
 }
 
-// Zeroize clears sensitive data from the state.
-//
-// The HostKey is BORROWED from the caller, so Zeroize drops the reference
-// without destroying the key — see FROSTDKGEncParticipantStateHK.Zeroize.
+// Zeroize clears the state's secrets and drops the borrowed HostKey without destroying it.
 func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 	if s == nil {
 		return
@@ -1690,10 +1561,7 @@ func (s *FROSTDKGFullParticipantStateHK1) Zeroize() {
 	s.HostKey = nil
 }
 
-// FROSTDKGFullParticipantStateHK2 holds state after round 2 with HostKey.
-//
-// HostKey is the same borrowed key state 1 carried, not a copy: see the
-// ownership rule on FROSTDKGEncParticipantRound1WithHostKey.
+// FROSTDKGFullParticipantStateHK2 holds state after round 2 with the same borrowed HostKey.
 type FROSTDKGFullParticipantStateHK2 struct {
 	Output      *FROSTDKGOutput
 	EqInput     []byte
@@ -1704,10 +1572,7 @@ type FROSTDKGFullParticipantStateHK2 struct {
 	Threshold   int
 }
 
-// Zeroize clears sensitive data from the state.
-//
-// The HostKey is BORROWED from the caller, so Zeroize drops the reference
-// without destroying the key — see FROSTDKGEncParticipantStateHK.Zeroize.
+// Zeroize clears the state's secrets and drops the borrowed HostKey without destroying it.
 func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 	if s == nil {
 		return
@@ -1719,10 +1584,7 @@ func (s *FROSTDKGFullParticipantStateHK2) Zeroize() {
 	s.HostKey = nil
 }
 
-// FROSTDKGFullParticipantStep1WithHostKey performs the first step using HostKey.
-//
-// The caller retains ownership of hostKey; the returned state only borrows it.
-// See FROSTDKGEncParticipantRound1WithHostKey for the ownership rule.
+// FROSTDKGFullParticipantStep1WithHostKey performs the first step; the returned state borrows hostKey.
 func FROSTDKGFullParticipantStep1WithHostKey(
 	cs ciphersuite.Ciphersuite,
 	hostKey HostKey,
@@ -1826,8 +1688,7 @@ func (s *FROSTDKGFullCoordinatorStateHK) Zeroize() {
 	s.EncShares = nil
 }
 
-// FROSTDKGFullCoordinatorStep1WithHostKey performs the coordinator's first step.
-// Note: The coordinator doesn't need a HostKey for step 1, it just processes messages.
+// FROSTDKGFullCoordinatorStep1WithHostKey performs the coordinator's first step, which needs no HostKey.
 func FROSTDKGFullCoordinatorStep1WithHostKey(
 	cs ciphersuite.Ciphersuite,
 	msgs []*FROSTDKGFullParticipantMsg1,

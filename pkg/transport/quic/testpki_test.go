@@ -29,19 +29,7 @@ import (
 	tlsconfig "github.com/jeremyhahn/go-frostdkg/pkg/transport/tls"
 )
 
-// The QUIC transport requires TLS on both ends: QUICClient.Connect refuses to
-// dial unless TLSCertFile or TLSCAFile is set. Every test here therefore needs a
-// certificate the server can present AND the client can verify. Because the
-// certificate is self-signed, the client's CA is the server's own certificate —
-// so both sides have to be handed the same file, and generating a fresh pair per
-// helper (which five separate helpers used to do) guarantees they never match.
-//
-// One ephemeral pair per test binary, shared by every helper, is what makes the
-// two ends agree. It is generated at run time and never committed, per
-// conventions/security-review.md §3; GenerateSelfSigned uses P-256 and
-// crypto/rand, and the SANs cover 127.0.0.1 and localhost, which is every
-// address these tests bind. Verification stays fully on — no InsecureSkipVerify
-// anywhere in the suite.
+// One ephemeral self-signed P-256 pair per test binary, shared by server and client so verification stays on.
 
 var (
 	testPKIOnce sync.Once

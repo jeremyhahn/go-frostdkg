@@ -14,17 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package memory provides an in-memory transport implementation for testing FROST DKG protocol.
-//
-// The memory transport enables testing without network I/O by using channels for message
-// passing between coordinator and participants within the same process.
-//
-// Key features:
-//   - Channel-based message routing
-//   - Thread-safe operations
-//   - Support for multiple concurrent DKG sessions
-//   - No TLS (in-memory only)
-//   - Zero network overhead
+// Package memory provides an in-process, channel-based transport for testing FROST DKG.
 package memory
 
 import (
